@@ -1,7 +1,10 @@
+"use client";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { Provider } from "react-redux";
+import { store } from "./store/store";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,11 +16,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "NxtAi",
-  description: "AI that can generate anything",
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,9 +26,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <SidebarProvider defaultOpen={false}>
-          {children}
-        </SidebarProvider>
+        <Provider store={store}>
+          <SidebarProvider defaultOpen={false}>{children}</SidebarProvider>
+        </Provider>
       </body>
     </html>
   );

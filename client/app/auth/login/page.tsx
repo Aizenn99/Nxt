@@ -1,25 +1,53 @@
+"use client";
 import { Button } from "@/components/ui/button";
+import { loginFormControls } from "@/app/config";
+import { useState } from "react";
+import { useDispatch } from "react-redux";
+import { loginUser } from "@/app/store/auth-slice/auth";
 
 const LoginAI = () => {
+  const [formData, setFormData] = useState(loginFormControls);
+  const dispatch = useDispatch();
+
+  function onChange(e) {
+    const { name, value } = e.target;
+    setFormData((prevFormData) => ({
+      ...prevFormData,
+      [name]: value,
+    }));
+  }
+
+  function onsubmit(e) {
+    e.preventDefault();
+    dispatch(
+      loginUser(formData)
+        .unwrap()
+        .then(() => {
+          router.push("/");
+        })
+        .catch((error) => {
+          console.log(error);
+        }),
+    );
+  }
+
   return (
     <div className="w-full flex items-center justify-center bg-black font-mono">
-      
       {/* Card */}
       <div className="w-[380px] p-8 rounded-2xl bg-muted/50 shadow-xl border border-border">
-        
         {/* Heading */}
         <h1 className="text-2xl text-center text-foreground mb-6">
-          Login <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">NxtAi</span>
+          Login{" "}
+          <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+            NxtAi
+          </span>
         </h1>
 
         {/* Form */}
         <form className="space-y-5">
-          
           {/* Email */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">
-              Email
-            </label>
+            <label className="text-sm text-muted-foreground">Email</label>
             <input
               type="email"
               placeholder="Enter your email"
@@ -31,9 +59,7 @@ const LoginAI = () => {
 
           {/* Password */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm text-muted-foreground">
-              Password
-            </label>
+            <label className="text-sm text-muted-foreground">Password</label>
             <input
               type="password"
               placeholder="Enter your password"
@@ -51,19 +77,17 @@ const LoginAI = () => {
           >
             Sign In
           </Button>
-
         </form>
 
         {/* Footer */}
-        <div className="mt-6 w-full text-center" >
-        <p className="text-center  text-sm text-muted-foreground ">
-          Don’t have an account?{" "}
-          <span className="text-gray-400 cursor-pointer hover:text-primary-foreground hover:underline">
-            Sign up
-          </span>
-        </p>
+        <div className="mt-6 w-full text-center">
+          <p className="text-center  text-sm text-muted-foreground ">
+            Don’t have an account?{" "}
+            <span className="text-gray-400 cursor-pointer hover:text-primary-foreground hover:underline">
+              Sign up
+            </span>
+          </p>
         </div>
-
       </div>
     </div>
   );
