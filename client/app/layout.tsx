@@ -5,6 +5,7 @@ import "./globals.css";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { Provider } from "react-redux";
 import { store } from "./store/store";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,6 +30,7 @@ export default function RootLayout({
         <Provider store={store}>
           <SidebarProvider defaultOpen={false}>{children}</SidebarProvider>
         </Provider>
+        <Toaster />
       </body>
     </html>
   );
