@@ -7,6 +7,7 @@ import {
   CircleHelp,
   History,
 } from "lucide-react";
+import Link from "next/link";
 import {
   Sidebar,
   SidebarContent,
@@ -83,13 +84,18 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
       <SidebarFooter className="p-2 pb-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              variant="default"
-              className="w-full justify-start gap-3 rounded-xl px-3 hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <CircleHelp className="h-4 w-4 shrink-0" />
-              <span>Help</span>
-            </SidebarMenuButton>
+            <Link href="/help" className="w-full">
+              <SidebarMenuButton
+                variant="default"
+                className="w-full justify-start gap-3 rounded-xl px-3 hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+                asChild
+              >
+                <div>
+                  <CircleHelp className="h-4 w-4 shrink-0" />
+                  <span>Help</span>
+                </div>
+              </SidebarMenuButton>
+            </Link>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton

@@ -63,7 +63,6 @@ const SUGGESTIONS = [
 
 const MODELS = [
   { id: "llama-3.3-70b-versatile", name: "Groq (Llama 3)" },
-  { id: "deepseek", name: "DeepSeek" },
   { id: "cohere", name: "Cohere" },
   { id: "openrouter", name: "OpenRouter" },
 ];
@@ -204,7 +203,9 @@ export default function Home() {
                           </DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem>Settings</DropdownMenuItem>
-                          <DropdownMenuItem>Help</DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href="/help" className="w-full cursor-pointer">Help</Link>
+                          </DropdownMenuItem>
                           <DropdownMenuItem>
                             <div
                               className="cursor-pointer w-full "
