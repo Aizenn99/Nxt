@@ -37,6 +37,7 @@ import {
   selectCurrentChat,
   fetchChatHistory,
 } from "@/app/store/chat-slice/chat";
+import { logoutUser } from "@/app/store/auth-slice/auth";
 import { ChatMessages } from "@/components/ChatMessages";
 
 const SUGGESTIONS = [
@@ -46,11 +47,11 @@ const SUGGESTIONS = [
   },
   {
     icon: <ImageIcon className="w-6 h-6 text-purple-400" />,
-    text: "Generate a logo concept",
+    text: "Generate a logo ",
   },
   {
     icon: <Video className="w-6 h-6 text-green-400" />,
-    text: "Create a short video script",
+    text: "Create a short video ",
   },
   {
     icon: <FileText className="w-6 h-6 text-orange-400" />,
@@ -108,6 +109,21 @@ export default function Home() {
     }
   };
 
+  function handleLogout() {
+    console.log("handleLogout called in page.tsx");
+    dispatch(logoutUser() as any)
+      .unwrap()
+      .then(() => {
+        console.log("Logout successful, redirecting...");
+        if (typeof window !== "undefined")
+          localStorage.removeItem("currentChatId");
+        router.push("/auth/login");
+      })
+      .catch((err: any) => {
+        console.error("Logout failed in try-catch:", err);
+      });
+  }
+
   const hasMessages = messages.length > 0;
 
   return (
@@ -154,8 +170,16 @@ export default function Home() {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem>Settings</DropdownMenuItem>
                           <DropdownMenuItem>Help</DropdownMenuItem>
-                          <DropdownMenuItem className="cursor-pointer">
-                            Logout
+                          <DropdownMenuItem>
+                            <div
+                              className="cursor-pointer w-full "
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleLogout();
+                              }}
+                            >
+                              Logout
+                            </div>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </AvatarFallback>

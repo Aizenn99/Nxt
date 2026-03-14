@@ -28,8 +28,15 @@ const generateId = () => {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
+const getInitialChatId = () => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("currentChatId");
+  }
+  return null;
+};
+
 const initialState: ChatState = {
-  currentChatId: null,
+  currentChatId: getInitialChatId(),
   chats: [],
   isLoading: false,
 };
@@ -43,6 +50,9 @@ const chatSlice = createSlice({
       const newChat: Chat = { id, title: "New Chat", messages: [] };
       state.chats.push(newChat);
       state.currentChatId = id;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("currentChatId", id);
+      }
     },
 
     addMessage(state, action: PayloadAction<{ chatId: string; message: Omit<Message, "id"> }>) {
@@ -64,9 +74,16 @@ const chatSlice = createSlice({
 
     setChats(state, action: PayloadAction<Chat[]>) {
       state.chats = action.payload;
-      // If there's no active chat but they have history, load the newest one
-      if (state.chats.length > 0 && !state.currentChatId) {
-        state.currentChatId = state.chats[state.chats.length - 1].id;
+      
+      // Validate that the persisted currentChatId actually exists in the newly loaded chats
+      if (state.currentChatId) {
+        const chatExists = state.chats.some(c => c.id === state.currentChatId);
+        if (!chatExists) {
+          state.currentChatId = null;
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("currentChatId");
+          }
+        }
       }
     },
 
@@ -76,10 +93,16 @@ const chatSlice = createSlice({
 
     switchChat(state, action: PayloadAction<string>) {
       state.currentChatId = action.payload;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("currentChatId", action.payload);
+      }
     },
 
     clearCurrentChat(state) {
       state.currentChatId = null;
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("currentChatId");
+      }
     },
   },
 });

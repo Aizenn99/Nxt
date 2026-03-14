@@ -55,13 +55,11 @@ export const logoutUser = createAsyncThunk(
   `${API_URL}/api/auth/logout`,
   async (_, thunkAPI) => {
     try {
+      console.log("logoutUser thunk is making the axios.post request to", `${API_URL}/api/auth/logout`);
       const response = await axios.post(
         `${API_URL}/api/auth/logout`,
         {},
         {
-          headers: {
-            "Content-Type": "application/json",
-          },
           withCredentials: true,
         },
       );
@@ -105,6 +103,7 @@ const authSlice = createSlice({
       state.error = null;
     },
   },
+
   extraReducers: (builder) => {
     builder
       .addCase(registerUser.pending, (state) => {
@@ -166,5 +165,4 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout } = authSlice.actions;
 export default authSlice.reducer;

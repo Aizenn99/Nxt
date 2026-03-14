@@ -33,10 +33,12 @@ const LoginAI = () => {
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    // @ts-expect-error loginUser is imported from JS and lacks precise types
     dispatch(loginUser(formData))
       .unwrap()
       .then((data: any) => {
         toast.success(data?.message || "Login successful!");
+        if (typeof window !== "undefined") localStorage.removeItem("currentChatId");
         router.push("/");
       })
       .catch((error: any) => {

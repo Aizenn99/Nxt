@@ -2,78 +2,135 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../../models/user");
 
+/* =========================
+   REGISTER USER
+========================= */
 const register = async (req, res) => {
   try {
     const { name, email, password } = req.body;
-    const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!name || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
     }
 
-    if (user) {
-      return res.status(400).json({ message: "User already exists" });
+    const existingUser = await User.findOne({
+      email: email.toLowerCase(),
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
     const newUser = new User({
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
     });
+
     await newUser.save();
-    res.status(201).json({ message: "User registered successfully" });
+
+    res.status(201).json({
+      success: true,
+      message: "User registered successfully",
+    });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
 
+/* =========================
+   LOGIN USER
+========================= */
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+    });
+
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
+
     if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid password" });
+      return res.status(401).json({
+        success: false,
+        message: "Invalid password",
+      });
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "5d",
     });
+
     res
       .cookie("token", token, {
         httpOnly: true,
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
       })
+      .status(200)
       .json({
         success: true,
         message: "User logged in successfully",
         user: {
           id: user._id,
-          email: user.email,
           name: user.name,
+          email: user.email,
         },
       });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
 
+/* =========================
+   CHECK AUTH
+========================= */
 const checkAuth = async (req, res) => {
   try {
     const token = req.cookies.token;
+
     if (!token) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
     }
-    const decodedToken = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decodedToken.id);
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await User.findById(decoded.id).select("-password");
+
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
+
     const newToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "5d",
     });
@@ -81,30 +138,53 @@ const checkAuth = async (req, res) => {
     res
       .cookie("token", newToken, {
         httpOnly: true,
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
       })
+      .status(200)
       .json({
         success: true,
         message: "Authenticated",
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-        },
+        user,
       });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+
+    res.status(401).json({
+      success: false,
+      message: "Invalid or expired token",
+    });
   }
 };
 
+/* =========================
+   LOGOUT USER
+========================= */
 const logout = async (req, res) => {
   try {
-    res.clearCookie("token");
-    res.status(200).json({ message: "User logged out successfully" });
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+      path: "/",
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "User logged out successfully",
+    });
   } catch (error) {
-    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
 
-module.exports = { register, login, checkAuth, logout };
+module.exports = {
+  register,
+  login,
+  checkAuth,
+  logout,
+};
