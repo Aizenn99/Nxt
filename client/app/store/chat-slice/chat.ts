@@ -120,6 +120,25 @@ const chatSlice = createSlice({
         localStorage.removeItem("currentChatId");
       }
     });
+    builder.addCase(deleteChatById.fulfilled, (state, action) => {
+      state.chats = state.chats.filter(chat => chat.id !== action.payload.chatId);
+      if (state.currentChatId === action.payload.chatId) {
+        state.currentChatId = null;
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("currentChatId");
+        }
+      }
+    });
+    builder.addCase(renameChat.fulfilled, (state, action) => {
+      if (action.payload && action.payload.chats) {
+        state.chats = action.payload.chats;
+      }
+    });
+    builder.addCase(pinChat.fulfilled, (state, action) => {
+      if (action.payload && action.payload.chats) {
+        state.chats = action.payload.chats;
+      }
+    });
   },
 });
 
@@ -183,6 +202,66 @@ export const syncChatHistory = createAsyncThunk(
       );
     } catch (error) {
       console.error("Error saving chat history to DB:", error);
+    }
+  }
+);
+
+export const deleteChatById = createAsyncThunk(
+  "chat/deleteById",
+  async (chatId: string) => {
+    try {
+      const response = await axios.delete(`${API_URL}/api/chathistory/${chatId}`, {
+        withCredentials: true,
+      });
+      return { chatId, data: response.data };
+    } catch (error) {
+      console.error("Error deleting chat by id:", error);
+      throw error;
+    }
+  }
+);
+
+export const renameChat = createAsyncThunk(
+  "chat/rename",
+  async ({ chatId, title }: { chatId: string; title: string }) => {
+    try {
+      const response = await axios.put(`${API_URL}/api/chathistory/${chatId}/rename`, { title }, {
+        withCredentials: true,
+      });
+      return response.data; // Assuming it returns updated chats or just success
+    } catch (error) {
+      console.error("Error renaming chat:", error);
+      throw error;
+    }
+  }
+);
+
+export const pinChat = createAsyncThunk(
+  "chat/pin",
+  async (chatId: string) => {
+    try {
+      const response = await axios.put(`${API_URL}/api/chathistory/${chatId}/pin`, {}, {
+        withCredentials: true,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error pinning chat:", error);
+      throw error;
+    }
+  }
+);
+
+export const shareChat = createAsyncThunk(
+  "chat/share",
+  async (chatId: string) => {
+    try {
+      const response = await axios.post(`${API_URL}/api/chathistory/${chatId}/share`, {}, {
+        withCredentials: true,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error sharing chat:", error);
+      throw error;
     }
   }
 );

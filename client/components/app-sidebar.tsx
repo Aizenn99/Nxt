@@ -40,14 +40,13 @@ import {
   selectChats,
   selectCurrentChatId,
   switchChat,
-} from "@/app/store/chat-slice/chat";
-
-import {
   deleteChatById,
   renameChat,
   pinChat,
   shareChat,
-} from "@/app/store/chathistory-slice/chathistory";
+} from "@/app/store/chat-slice/chat";
+
+import { toast } from "sonner";
 
 interface AppSidebarProps {
   onNewChat?: () => void;
@@ -157,7 +156,14 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
                               className="text-red-600 focus:text-red-600 focus:bg-red-100 dark:focus:bg-red-900"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                dispatch(deleteChatById(chat.id));
+                                dispatch(deleteChatById(chat.id))
+                                  .unwrap()
+                                  .then(() => {
+                                    toast.success("Chat deleted successfully");
+                                  })
+                                  .catch(() => {
+                                    toast.error("Failed to delete chat");
+                                  });
                               }}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
