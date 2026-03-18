@@ -3,7 +3,7 @@ const Image = require("../../models/image");
 const User = require("../../models/user");
 
 const HF_API_URL =
-  "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0";
+  "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell";
 const IMAGE_CREDIT_COST = 5;
 
 // Generate Image

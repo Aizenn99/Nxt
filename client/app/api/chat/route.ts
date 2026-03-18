@@ -11,10 +11,14 @@ export async function POST(req: NextRequest) {
 
     const token = req.cookies.get("token")?.value;
     if (!token) {
-      return NextResponse.json({ error: "Unauthorized: No token" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized: No token" },
+        { status: 401 },
+      );
     }
 
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+    const backendUrl =
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
     const lastMessage = messages[messages.length - 1];
     const userMessageContent = lastMessage.content as string;
 
@@ -38,7 +42,7 @@ export async function POST(req: NextRequest) {
         const errData = await deductRes.json().catch(() => ({}));
         return NextResponse.json(
           { error: errData.message || "Insufficient credits" },
-          { status: deductRes.status }
+          { status: deductRes.status },
         );
       }
 
@@ -46,12 +50,15 @@ export async function POST(req: NextRequest) {
 
       const hfKey = process.env.HF_API || "";
       if (!hfKey) {
-        return NextResponse.json({ error: "HF_API key not configured" }, { status: 500 });
+        return NextResponse.json(
+          { error: "HF_API key not configured" },
+          { status: 500 },
+        );
       }
 
       // Call Hugging Face
       const hfRes = await fetch(
-        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+        "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
         {
           method: "POST",
           headers: {
@@ -62,7 +69,7 @@ export async function POST(req: NextRequest) {
             inputs: prompt,
             parameters: { width: 512, height: 512 },
           }),
-        }
+        },
       );
 
       if (!hfRes.ok) {
@@ -72,19 +79,19 @@ export async function POST(req: NextRequest) {
         if (hfRes.status === 503) {
           return NextResponse.json(
             { error: "Image model is loading, please retry in 20 seconds" },
-            { status: 503 }
+            { status: 503 },
           );
         }
         if (hfRes.status === 401) {
           return NextResponse.json(
             { error: "Invalid Hugging Face token" },
-            { status: 401 }
+            { status: 401 },
           );
         }
 
         return NextResponse.json(
           { error: "Image generation failed" },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -118,7 +125,7 @@ export async function POST(req: NextRequest) {
         const errData = await deductRes.json().catch(() => ({}));
         return NextResponse.json(
           { error: errData.message || "Insufficient credits" },
-          { status: deductRes.status }
+          { status: deductRes.status },
         );
       }
 
@@ -126,7 +133,10 @@ export async function POST(req: NextRequest) {
 
       const falKey = process.env.FAL_AI || "";
       if (!falKey) {
-        return NextResponse.json({ error: "FAL_AI key not configured" }, { status: 500 });
+        return NextResponse.json(
+          { error: "FAL_AI key not configured" },
+          { status: 500 },
+        );
       }
 
       const falRes = await fetch(
@@ -138,14 +148,14 @@ export async function POST(req: NextRequest) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ prompt }),
-        }
+        },
       );
 
       if (!falRes.ok) {
         const err = await falRes.text();
         return NextResponse.json(
           { error: `Video generation failed: ${err}` },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -168,7 +178,10 @@ export async function POST(req: NextRequest) {
     if (selectedModel === "cohere") {
       const apiKey = process.env.COHERE_API || "";
       if (!apiKey) {
-        return NextResponse.json({ error: "Cohere API key not configured" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Cohere API key not configured" },
+          { status: 500 },
+        );
       }
 
       const cohere = new CohereClientV2({ token: apiKey });
@@ -188,7 +201,6 @@ export async function POST(req: NextRequest) {
 
       const textContent = (response.message?.content as any)?.[0]?.text;
       reply = textContent || String(response.message?.content || "");
-
     } else {
       let apiUrl = "";
       let apiKey = "";
@@ -202,7 +214,10 @@ export async function POST(req: NextRequest) {
         requestBody = {
           model: "llama-3.3-70b-versatile",
           messages: [
-            { role: "system", content: "You are NxtAI. Be concise and helpful." },
+            {
+              role: "system",
+              content: "You are NxtAI. Be concise and helpful.",
+            },
             ...messages,
           ],
           temperature: 0.7,
@@ -233,13 +248,16 @@ export async function POST(req: NextRequest) {
           ],
         };
       } else {
-        return NextResponse.json({ error: "Unsupported model" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Unsupported model" },
+          { status: 400 },
+        );
       }
 
       if (!apiKey) {
         return NextResponse.json(
           { error: `API key for ${selectedModel} is not configured` },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -254,7 +272,7 @@ export async function POST(req: NextRequest) {
         console.error(`❌ ${selectedModel} error:`, err);
         return NextResponse.json(
           { error: err.error?.message || `${selectedModel} request failed` },
-          { status: response.status }
+          { status: response.status },
         );
       }
 
@@ -277,7 +295,6 @@ export async function POST(req: NextRequest) {
       .catch(() => ({ remainingCredits: null }));
 
     return NextResponse.json({ reply, remainingCredits });
-
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("❌ /api/chat fatal error:", message);
