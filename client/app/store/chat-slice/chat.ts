@@ -2,8 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
 import axios from "axios";
 import { updateCredits, logoutUser } from "../auth-slice/auth";
 
-// Using NEXT_PUBLIC_API_URL for Next.js app
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_URL = process.env.VITE_API_URL || "http://localhost:5000";
 
 export interface Message {
   id: string;
@@ -15,6 +14,8 @@ export interface Message {
 export interface Chat {
   id: string;
   title: string;
+  pinned?: boolean;
+  shareId?: string | null;
   messages: Message[];
 }
 
@@ -26,7 +27,6 @@ interface ChatState {
 }
 
 const generateId = () => {
-  // Simple ID without uuid dependency
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 };
 
@@ -41,8 +41,178 @@ const initialState: ChatState = {
   currentChatId: getInitialChatId(),
   chats: [],
   isLoading: false,
-  selectedModel: "llama-3.3-70b-versatile", // Default to Groq's Llama
+  selectedModel: "llama-3.3-70b-versatile",
 };
+
+// ─────────────────────────────────────────────────────────────
+// FIX 1: All thunks declared ABOVE createSlice so extraReducers
+//         can reference them without a ReferenceError
+// ─────────────────────────────────────────────────────────────
+
+export const fetchChatHistory = createAsyncThunk(
+  "chat/fetchHistory",
+  async (_, { dispatch }) => {
+    try {
+      const res = await axios.get(`${API_URL}/api/chathistory`, {
+        withCredentials: true,
+      });
+      if (Array.isArray(res.data)) {
+        dispatch(setChats(res.data));
+      }
+    } catch (err) {
+      console.error("Fetch history error:", err);
+    }
+  }
+);
+
+export const syncChatHistory = createAsyncThunk(
+  "chat/syncHistory",
+  async (_, { getState }) => {
+    const state = getState() as { chat: ChatState };
+    try {
+      await axios.post(
+        `${API_URL}/api/chathistory`,
+        { chats: state.chat.chats },
+        { withCredentials: true }
+      );
+    } catch (err) {
+      console.error("Sync history error:", err);
+    }
+  }
+);
+
+export const deleteChatById = createAsyncThunk(
+  "chat/delete",
+  async (chatId: string) => {
+    await axios.delete(`${API_URL}/api/chathistory/${chatId}`, {
+      withCredentials: true,
+    });
+    return { chatId };
+  }
+);
+
+export const renameChat = createAsyncThunk(
+  "chat/rename",
+  async ({ chatId, title }: { chatId: string; title: string }) => {
+    await axios.put(
+      `${API_URL}/api/chathistory/${chatId}/rename`,
+      { title },
+      { withCredentials: true }
+    );
+  }
+);
+
+export const pinChat = createAsyncThunk(
+  "chat/pin",
+  async (chatId: string) => {
+    await axios.put(
+      `${API_URL}/api/chathistory/${chatId}/pin`,
+      {},
+      { withCredentials: true }
+    );
+    return chatId;
+  }
+);
+
+export const shareChat = createAsyncThunk(
+  "chat/share",
+  async (chatId: string) => {
+    const res = await axios.post(
+      `${API_URL}/api/chathistory/${chatId}/share`,
+      {},
+      { withCredentials: true }
+    );
+    return { chatId, shareId: res.data.shareId };
+  }
+);
+
+export const sendChatMessage = createAsyncThunk(
+  "chat/send",
+  async (userText: string, { dispatch, getState }) => {
+    const state = getState() as { chat: ChatState };
+
+    let chatId = state.chat.currentChatId;
+
+    if (!chatId) {
+      dispatch(startNewChat());
+      const updated = getState() as { chat: ChatState };
+      chatId = updated.chat.currentChatId!;
+    }
+
+    // FIX 4: Capture history BEFORE dispatching the new user message
+    //         so the user message is not duplicated in the LLM context
+    const existingHistory =
+      (getState() as { chat: ChatState }).chat.chats
+        .find((c) => c.id === chatId)
+        ?.messages.map((m) => ({ role: m.role, content: m.content })) ?? [];
+
+    const fullHistory = [
+      ...existingHistory,
+      { role: "user" as const, content: userText },
+    ];
+
+    dispatch(
+      addMessage({
+        chatId,
+        message: {
+          role: "user",
+          content: userText,
+          timestamp: Date.now(),
+        },
+      })
+    );
+
+    dispatch(setLoading(true));
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: fullHistory,
+          model: state.chat.selectedModel,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error ?? "API error");
+
+      if (data.remainingCredits !== undefined) {
+        dispatch(updateCredits(data.remainingCredits));
+      }
+
+      dispatch(
+        addMessage({
+          chatId,
+          message: {
+            role: "assistant",
+            content: data.reply,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    } catch (err: any) {
+      dispatch(
+        addMessage({
+          chatId,
+          message: {
+            role: "assistant",
+            content: `⚠️ ${err.message}`,
+            timestamp: Date.now(),
+          },
+        })
+      );
+    } finally {
+      dispatch(setLoading(false));
+      dispatch(syncChatHistory());
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────
+// Slice
+// ─────────────────────────────────────────────────────────────
 
 const chatSlice = createSlice({
   name: "chat",
@@ -50,7 +220,12 @@ const chatSlice = createSlice({
   reducers: {
     startNewChat(state) {
       const id = generateId();
-      const newChat: Chat = { id, title: "New Chat", messages: [] };
+      const newChat: Chat = {
+        id,
+        title: "New Chat",
+        pinned: false,
+        messages: [],
+      };
       state.chats.push(newChat);
       state.currentChatId = id;
       if (typeof window !== "undefined") {
@@ -58,7 +233,10 @@ const chatSlice = createSlice({
       }
     },
 
-    addMessage(state, action: PayloadAction<{ chatId: string; message: Omit<Message, "id"> }>) {
+    addMessage(
+      state,
+      action: PayloadAction<{ chatId: string; message: Omit<Message, "id"> }>
+    ) {
       const { chatId, message } = action.payload;
       const chat = state.chats.find((c) => c.id === chatId);
       if (!chat) return;
@@ -66,8 +244,11 @@ const chatSlice = createSlice({
       const newMsg: Message = { ...message, id: generateId() };
       chat.messages.push(newMsg);
 
-      // Auto-title the chat from the first user message
-      if (chat.messages.length === 1 && message.role === "user") {
+      if (
+        chat.messages.length === 1 &&
+        message.role === "user" &&
+        chat.title === "New Chat"
+      ) {
         chat.title =
           message.content.length > 40
             ? message.content.slice(0, 40) + "…"
@@ -77,11 +258,9 @@ const chatSlice = createSlice({
 
     setChats(state, action: PayloadAction<Chat[]>) {
       state.chats = action.payload;
-      
-      // Validate that the persisted currentChatId actually exists in the newly loaded chats
       if (state.currentChatId) {
-        const chatExists = state.chats.some(c => c.id === state.currentChatId);
-        if (!chatExists) {
+        const exists = state.chats.some((c) => c.id === state.currentChatId);
+        if (!exists) {
           state.currentChatId = null;
           if (typeof window !== "undefined") {
             localStorage.removeItem("currentChatId");
@@ -112,7 +291,9 @@ const chatSlice = createSlice({
       state.selectedModel = action.payload;
     },
   },
+
   extraReducers: (builder) => {
+    // Logout — clear everything
     builder.addCase(logoutUser.fulfilled, (state) => {
       state.chats = [];
       state.currentChatId = null;
@@ -120,8 +301,12 @@ const chatSlice = createSlice({
         localStorage.removeItem("currentChatId");
       }
     });
+
+    // Delete chat
     builder.addCase(deleteChatById.fulfilled, (state, action) => {
-      state.chats = state.chats.filter(chat => chat.id !== action.payload.chatId);
+      state.chats = state.chats.filter(
+        (chat) => chat.id !== action.payload.chatId
+      );
       if (state.currentChatId === action.payload.chatId) {
         state.currentChatId = null;
         if (typeof window !== "undefined") {
@@ -129,15 +314,32 @@ const chatSlice = createSlice({
         }
       }
     });
+
+    // Rename chat
     builder.addCase(renameChat.fulfilled, (state, action) => {
-      if (action.payload && action.payload.chats) {
-        state.chats = action.payload.chats;
-      }
+      const { chatId, title } = action.meta.arg;
+      const chat = state.chats.find((c) => c.id === chatId);
+      if (chat) chat.title = title;
     });
+
+    // Pin chat — optimistic toggle with rollback on failure
     builder.addCase(pinChat.fulfilled, (state, action) => {
-      if (action.payload && action.payload.chats) {
-        state.chats = action.payload.chats;
-      }
+      const chatId = action.meta.arg;
+      const chat = state.chats.find((c) => c.id === chatId);
+      if (chat) chat.pinned = !chat.pinned;
+    });
+    // FIX 3: Revert pin toggle if backend call fails
+    builder.addCase(pinChat.rejected, (state, action) => {
+      const chatId = action.meta.arg;
+      const chat = state.chats.find((c) => c.id === chatId);
+      if (chat) chat.pinned = !chat.pinned;
+    });
+
+    // FIX 6: Handle shareChat fulfilled — store shareId on the chat
+    builder.addCase(shareChat.fulfilled, (state, action) => {
+      const { chatId, shareId } = action.payload;
+      const chat = state.chats.find((c) => c.id === chatId);
+      if (chat) chat.shareId = shareId;
     });
   },
 });
@@ -154,7 +356,10 @@ export const {
 
 export default chatSlice.reducer;
 
+// ─────────────────────────────────────────────────────────────
 // Selectors
+// ─────────────────────────────────────────────────────────────
+
 export const selectCurrentChat = (state: { chat: ChatState }) =>
   state.chat.chats.find((c) => c.id === state.chat.currentChatId) ?? null;
 
@@ -164,181 +369,11 @@ export const selectMessages = (state: { chat: ChatState }) =>
 export const selectIsLoading = (state: { chat: ChatState }) =>
   state.chat.isLoading;
 
-export const selectChats = (state: { chat: ChatState }) => state.chat.chats;
+export const selectChats = (state: { chat: ChatState }) =>
+  [...state.chat.chats].sort((a, b) => Number(b.pinned) - Number(a.pinned));
 
 export const selectCurrentChatId = (state: { chat: ChatState }) =>
   state.chat.currentChatId;
 
 export const selectSelectedModel = (state: { chat: ChatState }) =>
   state.chat.selectedModel;
-
-// Database sync thunks
-export const fetchChatHistory = createAsyncThunk(
-  "chat/fetchHistory",
-  async (_, { dispatch }) => {
-    try {
-      const response = await axios.get(`${API_URL}/api/chathistory`, {
-        withCredentials: true,
-      });
-      // response.data holds the `.chats` array
-      if (Array.isArray(response.data)) {
-        dispatch(setChats(response.data));
-      }
-    } catch (error) {
-      console.error("Error fetching chat history from DB:", error);
-    }
-  }
-);
-
-export const syncChatHistory = createAsyncThunk(
-  "chat/syncHistory",
-  async (_, { getState }) => {
-    try {
-      const state = getState() as { chat: ChatState };
-      await axios.post(
-        `${API_URL}/api/chathistory`,
-        { chats: state.chat.chats },
-        { withCredentials: true }
-      );
-    } catch (error) {
-      console.error("Error saving chat history to DB:", error);
-    }
-  }
-);
-
-export const deleteChatById = createAsyncThunk(
-  "chat/deleteById",
-  async (chatId: string) => {
-    try {
-      const response = await axios.delete(`${API_URL}/api/chathistory/${chatId}`, {
-        withCredentials: true,
-      });
-      return { chatId, data: response.data };
-    } catch (error) {
-      console.error("Error deleting chat by id:", error);
-      throw error;
-    }
-  }
-);
-
-export const renameChat = createAsyncThunk(
-  "chat/rename",
-  async ({ chatId, title }: { chatId: string; title: string }) => {
-    try {
-      const response = await axios.put(`${API_URL}/api/chathistory/${chatId}/rename`, { title }, {
-        withCredentials: true,
-      });
-      return response.data; // Assuming it returns updated chats or just success
-    } catch (error) {
-      console.error("Error renaming chat:", error);
-      throw error;
-    }
-  }
-);
-
-export const pinChat = createAsyncThunk(
-  "chat/pin",
-  async (chatId: string) => {
-    try {
-      const response = await axios.put(`${API_URL}/api/chathistory/${chatId}/pin`, {}, {
-        withCredentials: true,
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error pinning chat:", error);
-      throw error;
-    }
-  }
-);
-
-export const shareChat = createAsyncThunk(
-  "chat/share",
-  async (chatId: string) => {
-    try {
-      const response = await axios.post(`${API_URL}/api/chathistory/${chatId}/share`, {}, {
-        withCredentials: true,
-      });
-      return response.data;
-    } catch (error) {
-      console.error("Error sharing chat:", error);
-      throw error;
-    }
-  }
-);
-
-// Async thunk — orchestrates the full send flow
-export const sendChatMessage = createAsyncThunk(
-  "chat/sendChatMessage",
-  async (userText: string, { dispatch, getState }) => {
-    const state = getState() as { chat: ChatState };
-    let chatId = state.chat.currentChatId;
-
-    // Create a new chat if none is active
-    if (!chatId) {
-      dispatch(startNewChat());
-      const updated = getState() as { chat: ChatState };
-      chatId = updated.chat.currentChatId!;
-    }
-
-    // Add user message
-    dispatch(
-      addMessage({
-        chatId,
-        message: { role: "user", content: userText, timestamp: Date.now() },
-      })
-    );
-    dispatch(setLoading(true));
-
-    try {
-      // Build history from updated state
-      const latestState = getState() as { chat: ChatState };
-      const history =
-        latestState.chat.chats
-          .find((c) => c.id === chatId)
-          ?.messages.map((m) => ({ role: m.role, content: m.content })) ?? [];
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          messages: history,
-          model: state.chat.selectedModel 
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "API error");
-
-      if (data.remainingCredits !== undefined) {
-        dispatch(updateCredits(data.remainingCredits));
-      }
-
-      dispatch(
-        addMessage({
-          chatId,
-          message: {
-            role: "assistant",
-            content: data.reply,
-            timestamp: Date.now(),
-          },
-        })
-      );
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      dispatch(
-        addMessage({
-          chatId,
-          message: {
-            role: "assistant",
-            content: `⚠️ ${msg}`,
-            timestamp: Date.now(),
-          },
-        })
-      );
-    } finally {
-      dispatch(setLoading(false));
-      // Once both messages have landed, push the full store updates to MongoDB
-      dispatch(syncChatHistory());
-    }
-  }
-);

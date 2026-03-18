@@ -1,5 +1,11 @@
 const ChatHistory = require("../../models/chathistory");
+const crypto = require("crypto");
 
+/*
+--------------------------------
+SAVE CHAT HISTORY
+--------------------------------
+*/
 const saveChatHistory = async (req, res) => {
   try {
     const { chats } = req.body;
@@ -15,61 +21,206 @@ const saveChatHistory = async (req, res) => {
       await chatHistory.save();
     }
 
-    res.json({ success: true, chatHistory });
+    res.json({
+      success: true,
+      chats: chatHistory.chats,
+    });
   } catch (err) {
     console.error("Chat history error:", err.message);
-    res.status(500).json({ error: err.message ?? "Internal server error" });
+    res.status(500).json({ error: err.message || "Internal server error" });
   }
 };
 
-const clearAllChatHistory = async (req, res) => {
-  try {
-    const userId = req.userId;
-    const chatHistory = await ChatHistory.findOne({ userId });
-    if (chatHistory) {
-      chatHistory.chats = [];
-      await chatHistory.save();
-    }
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Chat history error:", err.message);
-    res.status(500).json({ error: err.message ?? "Internal server error" });
-  }
-};
-
+/*
+--------------------------------
+GET CHAT HISTORY
+--------------------------------
+*/
 const getChatHistory = async (req, res) => {
   try {
     const userId = req.userId;
+
     const chatHistory = await ChatHistory.findOne({ userId });
+
     res.json(chatHistory ? chatHistory.chats : []);
   } catch (err) {
     console.error("Chat history error:", err.message);
-    res.status(500).json({ error: err.message ?? "Internal server error" });
+    res.status(500).json({ error: err.message || "Internal server error" });
   }
 };
 
+/*
+--------------------------------
+DELETE CHAT
+--------------------------------
+*/
 const deleteChatById = async (req, res) => {
   try {
     const userId = req.userId;
     const { chatId } = req.params;
 
     const chatHistory = await ChatHistory.findOne({ userId });
-    if (chatHistory) {
-      chatHistory.chats = chatHistory.chats.filter((chat) => chat.id !== chatId);
-      await chatHistory.save();
-      return res.json({ success: true, message: "Chat deleted successfully", chats: chatHistory.chats });
+
+    if (!chatHistory) {
+      return res.status(404).json({ error: "Chat history not found" });
     }
 
-    res.status(404).json({ error: "Chat history not found" });
+    chatHistory.chats = chatHistory.chats.filter((chat) => chat.id !== chatId);
+
+    await chatHistory.save();
+
+    res.json({
+      success: true,
+      message: "Chat deleted successfully",
+      chats: chatHistory.chats,
+    });
   } catch (err) {
     console.error("Chat delete error:", err.message);
-    res.status(500).json({ error: err.message ?? "Internal server error" });
+    res.status(500).json({ error: err.message || "Internal server error" });
+  }
+};
+
+/*
+--------------------------------
+RENAME CHAT
+--------------------------------
+*/
+const renameChat = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { chatId } = req.params;
+    const { title } = req.body;
+
+    const chatHistory = await ChatHistory.findOne({ userId });
+
+    if (!chatHistory) {
+      return res.status(404).json({ error: "Chat history not found" });
+    }
+
+    const chat = chatHistory.chats.find((c) => c.id === chatId);
+
+    if (!chat) {
+      return res.status(404).json({ error: "Chat not found" });
+    }
+
+    chat.title = title;
+
+    await chatHistory.save();
+
+    res.json({
+      success: true,
+      chats: chatHistory.chats,
+    });
+  } catch (err) {
+    console.error("Rename chat error:", err.message);
+    res.status(500).json({ error: err.message || "Internal server error" });
+  }
+};
+
+/*
+--------------------------------
+PIN / UNPIN CHAT
+--------------------------------
+*/
+const pinChat = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { chatId } = req.params;
+
+    const chatHistory = await ChatHistory.findOne({ userId });
+
+    if (!chatHistory) {
+      return res.status(404).json({ error: "Chat history not found" });
+    }
+
+    const chat = chatHistory.chats.find((c) => c.id === chatId);
+
+    if (!chat) {
+      return res.status(404).json({ error: "Chat not found" });
+    }
+
+    chat.pinned = !chat.pinned;
+
+    await chatHistory.save();
+
+    res.json({
+      success: true,
+      chats: chatHistory.chats,
+    });
+  } catch (err) {
+    console.error("Pin chat error:", err.message);
+    res.status(500).json({ error: err.message || "Internal server error" });
+  }
+};
+
+/*
+--------------------------------
+SHARE CHAT
+--------------------------------
+*/
+const shareChat = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { chatId } = req.params;
+
+    const chatHistory = await ChatHistory.findOne({ userId });
+
+    if (!chatHistory) {
+      return res.status(404).json({ error: "Chat history not found" });
+    }
+
+    const chat = chatHistory.chats.find((c) => c.id === chatId);
+
+    if (!chat) {
+      return res.status(404).json({ error: "Chat not found" });
+    }
+
+    if (!chat.shareId) {
+      chat.shareId = crypto.randomBytes(8).toString("hex");
+      await chatHistory.save();
+    }
+
+    const shareUrl = `${process.env.CLIENT_URL}/share/${chat.shareId}`;
+
+    res.json({
+      success: true,
+      shareUrl,
+    });
+  } catch (err) {
+    console.error("Share chat error:", err.message);
+    res.status(500).json({ error: err.message || "Internal server error" });
+  }
+};
+
+/*
+--------------------------------
+CLEAR ALL HISTORY
+--------------------------------
+*/
+const clearAllChatHistory = async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const chatHistory = await ChatHistory.findOne({ userId });
+
+    if (chatHistory) {
+      chatHistory.chats = [];
+      await chatHistory.save();
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Clear history error:", err.message);
+    res.status(500).json({ error: err.message || "Internal server error" });
   }
 };
 
 module.exports = {
   saveChatHistory,
-  clearAllChatHistory,
   getChatHistory,
   deleteChatById,
+  renameChat,
+  pinChat,
+  shareChat,
+  clearAllChatHistory,
 };
