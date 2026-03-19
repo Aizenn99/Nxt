@@ -1,12 +1,8 @@
 const User = require("../models/user");
 const creditCosts = require("../config/creditCosts");
 
-/**
- * Factory middleware: checkCredits("chat") | checkCredits("image") | etc.
- * Must be used AFTER authMiddleware (relies on req.userId from JWT).
- *
- * Costs: chat=1, image=5, ppt=10, video=20
- */
+const DAILY_CREDITS = 100; // your reset value
+
 const checkCredits = (feature) => async (req, res, next) => {
   const cost = creditCosts[feature];
 
@@ -15,28 +11,40 @@ const checkCredits = (feature) => async (req, res, next) => {
   }
 
   try {
-    // Atomically deduct credits only if user has enough — prevents race conditions
-    const user = await User.findOneAndUpdate(
-      { _id: req.userId, credits: { $gte: cost } },
-      { $inc: { credits: -cost } },
-      { new: true }
-    );
+    let user = await User.findById(req.userId);
 
     if (!user) {
-      // Either user not found OR not enough credits
-      const existing = await User.findById(req.userId);
-      if (!existing) {
-        return res.status(404).json({ message: "User not found" });
-      }
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // 🧠 Check if 24 hours passed
+    const now = new Date();
+    const lastReset = new Date(user.lastCreditReset);
+
+    const hoursPassed = (now - lastReset) / (1000 * 60 * 60);
+
+    if (hoursPassed >= 24) {
+      user.credits = DAILY_CREDITS;
+      user.lastCreditReset = now;
+      await user.save();
+    }
+
+    // 🔥 Now do atomic deduction
+    const updatedUser = await User.findOneAndUpdate(
+      { _id: req.userId, credits: { $gte: cost } },
+      { $inc: { credits: -cost } },
+      { new: true },
+    );
+
+    if (!updatedUser) {
       return res.status(403).json({
         message: "Insufficient credits",
         required: cost,
-        remaining: existing.credits,
+        remaining: user.credits,
       });
     }
 
-    // Attach remaining credits so the route handler can return it
-    req.remainingCredits = user.credits;
+    req.remainingCredits = updatedUser.credits;
     next();
   } catch (error) {
     console.error("Credit check error:", error.message);

@@ -178,10 +178,10 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent
-                  align="end"
+                  align="center"
                   side="right"
-                  sideOffset={6}
-                  className="w-48"
+                  sideOffset={8}
+                  className="w-48 rounded-2xl p-2"
                 >
                   {/* SHARE */}
                   <DropdownMenuItem
@@ -231,7 +231,7 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
 
                   {/* DELETE */}
                   <DropdownMenuItem
-                    className="text-red-600 focus:text-red-600 focus:bg-red-100 dark:focus:bg-red-900"
+                    className="text-red-600 cursor-pointer hover:bg-red-600/10 rounded-2xl"
                     onClick={(e) => {
                       e.stopPropagation();
                       dispatch(deleteChatById(chat.id))

@@ -1,19 +1,33 @@
 const mongoose = require("mongoose");
 
-const creditUserSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  password: String,
-
-  credits: {
-    type: Number,
-    default: 100,
+const creditUserSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      index: true,
+    },
+    password: {
+      type: String,
+      required: true,
+    },
+    credits: {
+      type: Number,
+      default: 100,
+      min: 0,
+    },
+    lastCreditReset: {
+      type: Date,
+      default: Date.now,
+    },
   },
-
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
-});
+  { timestamps: true },
+);
 
 module.exports = mongoose.model("CreditUser", creditUserSchema);

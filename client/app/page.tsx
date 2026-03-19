@@ -191,47 +191,41 @@ export default function Home() {
                   </div>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Avatar className="w-9 h-9 cursor-pointer ring-2 ring-transparent transition-all hover:ring-primary/50 bg-transparent">
-                      <AvatarImage src="" />
-                      <AvatarFallback className="bg-transparent text-foreground border border-border">
-                        {user?.name ? (
-                          user.name.charAt(0).toUpperCase()
-                        ) : (
-                          <UserCircle className="w-6 h-6 text-muted-foreground" />
-                        )}
-                        <DropdownMenuContent
-                          side="left"
-                          className="w-40 mt-3 mr-2 p-2 rounded-2xl"
-                        >
-                          <DropdownMenuLabel className="flex justify-center items-center">
-                            {user?.name}
-                          </DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem>Settings</DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link
-                              href="/help"
-                              className="w-full cursor-pointer"
-                            >
-                              Help
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem>
-                            <div
-                              className="cursor-pointer w-full "
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleLogout();
-                              }}
-                            >
-                              Logout
-                            </div>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </AvatarFallback>
-                    </Avatar>
-                  </DropdownMenuTrigger>
-                </DropdownMenu>
+                      <Avatar className="w-9 h-9 cursor-pointer">
+                        <AvatarFallback>
+                          {user?.name?.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </DropdownMenuTrigger>
+
+                    <DropdownMenuContent
+                      side="bottom"
+                      sideOffset={10}
+                      className="w-40 mr-2 p-2 rounded-2xl"
+                    >
+                      <DropdownMenuLabel className="flex justify-center items-center">
+                        {user?.name}
+                      </DropdownMenuLabel>
+
+                      <DropdownMenuSeparator />
+
+                      <DropdownMenuItem>Settings</DropdownMenuItem>
+
+                      <DropdownMenuItem asChild>
+                        <Link href="/help">Help</Link>
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleLogout();
+                        }}
+                        className="cursor-pointer rounded-xl hover:bg-white/10"
+                      >
+                        Logout
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               ) : (
                 <Button variant="outline" asChild className="ml-2">
