@@ -7,7 +7,6 @@ import {
 import axios from "axios";
 import { updateCredits, logoutUser } from "../auth-slice/auth";
 
-// ✅ Fix 1: NEXT_PUBLIC_API_URL instead of VITE_API_URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export interface Message {
@@ -51,8 +50,7 @@ const initialState: ChatState = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// ✅ Fix 2: Strip base64 images before saving to localStorage
-//           or MongoDB to prevent payload size failures
+// Strip base64 images before saving to localStorage or MongoDB
 // ─────────────────────────────────────────────────────────────
 const stripBase64FromChats = (chats: Chat[]): Chat[] => {
   return chats.map((chat) => ({
@@ -67,7 +65,7 @@ const stripBase64FromChats = (chats: Chat[]): Chat[] => {
   }));
 };
 
-// ✅ Fix 3: Instant localStorage backup helper
+// Instant localStorage backup helper
 const backupToLocalStorage = (chats: Chat[]) => {
   if (typeof window === "undefined") return;
   try {
@@ -79,7 +77,7 @@ const backupToLocalStorage = (chats: Chat[]) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Thunks declared ABOVE createSlice — no ReferenceError
+// All thunks ABOVE createSlice — no ReferenceError
 // ─────────────────────────────────────────────────────────────
 
 export const fetchChatHistory = createAsyncThunk(
@@ -91,7 +89,6 @@ export const fetchChatHistory = createAsyncThunk(
       });
 
       if (Array.isArray(res.data) && res.data.length > 0) {
-        // ✅ Fix 4: Merge MongoDB + localStorage to recover unsynced chats
         if (typeof window !== "undefined") {
           const localBackup = localStorage.getItem("chats_backup");
           if (localBackup) {
@@ -102,7 +99,6 @@ export const fetchChatHistory = createAsyncThunk(
             if (missingChats.length > 0) {
               const merged = [...res.data, ...missingChats];
               dispatch(setChats(merged));
-              // Sync merged result back to MongoDB
               await axios.post(
                 `${API_URL}/api/chathistory`,
                 { chats: stripBase64FromChats(merged) },
@@ -114,14 +110,12 @@ export const fetchChatHistory = createAsyncThunk(
         }
         dispatch(setChats(res.data));
       } else {
-        // MongoDB empty — recover from localStorage
         if (typeof window !== "undefined") {
           const localBackup = localStorage.getItem("chats_backup");
           if (localBackup) {
             const localChats: Chat[] = JSON.parse(localBackup);
             if (localChats.length > 0) {
               dispatch(setChats(localChats));
-              // Push localStorage data up to MongoDB
               await axios.post(
                 `${API_URL}/api/chathistory`,
                 { chats: localChats },
@@ -133,7 +127,6 @@ export const fetchChatHistory = createAsyncThunk(
       }
     } catch (err) {
       console.error("Fetch history error:", err);
-      // ✅ Fix 5: If MongoDB fails entirely, fall back to localStorage
       if (typeof window !== "undefined") {
         try {
           const localBackup = localStorage.getItem("chats_backup");
@@ -154,7 +147,6 @@ export const syncChatHistory = createAsyncThunk(
   async (_, { getState }) => {
     const state = getState() as { chat: ChatState };
     try {
-      // ✅ Fix 6: Strip base64 before sending to MongoDB
       const cleanChats = stripBase64FromChats(state.chat.chats);
       await axios.post(
         `${API_URL}/api/chathistory`,
@@ -209,6 +201,34 @@ export const shareChat = createAsyncThunk(
   },
 );
 
+// ✅ Generates AI title from first user message
+export const generateChatTitle = createAsyncThunk(
+  "chat/generateTitle",
+  async (
+    { chatId, message }: { chatId: string; message: string },
+    { dispatch },
+  ) => {
+    try {
+      const res = await fetch("/api/generate-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+
+      const data = await res.json();
+      const title = data.title || message.slice(0, 40);
+
+      // ✅ Update title in state
+      dispatch(setChatTitle({ chatId, title }));
+
+      // ✅ Sync updated title to MongoDB
+      dispatch(syncChatHistory());
+    } catch (err) {
+      console.error("Title generation failed:", err);
+    }
+  },
+);
+
 export const sendChatMessage = createAsyncThunk(
   "chat/send",
   async (userText: string, { dispatch, getState }) => {
@@ -223,7 +243,6 @@ export const sendChatMessage = createAsyncThunk(
     }
 
     // Capture history BEFORE dispatching user message
-    // so it is not duplicated in LLM context
     const existingHistory =
       (getState() as { chat: ChatState }).chat.chats
         .find((c) => c.id === chatId)
@@ -244,6 +263,15 @@ export const sendChatMessage = createAsyncThunk(
         },
       }),
     );
+
+    // ✅ Generate AI title on first message only
+    const chatAfterMessage = (
+      getState() as { chat: ChatState }
+    ).chat.chats.find((c) => c.id === chatId);
+
+    if (chatAfterMessage?.messages.length === 1) {
+      dispatch(generateChatTitle({ chatId, message: userText }));
+    }
 
     dispatch(setLoading(true));
 
@@ -314,7 +342,19 @@ const chatSlice = createSlice({
 
       if (typeof window !== "undefined") {
         localStorage.setItem("currentChatId", id);
-        // ✅ Fix 7: Backup instantly when new chat is created
+        backupToLocalStorage(state.chats);
+      }
+    },
+
+    // ✅ Used by generateChatTitle thunk to update title in state
+    setChatTitle(
+      state,
+      action: PayloadAction<{ chatId: string; title: string }>,
+    ) {
+      const { chatId, title } = action.payload;
+      const chat = state.chats.find((c) => c.id === chatId);
+      if (chat) {
+        chat.title = title;
         backupToLocalStorage(state.chats);
       }
     },
@@ -330,18 +370,8 @@ const chatSlice = createSlice({
       const newMsg: Message = { ...message, id: generateId() };
       chat.messages.push(newMsg);
 
-      if (
-        chat.messages.length === 1 &&
-        message.role === "user" &&
-        chat.title === "New Chat"
-      ) {
-        chat.title =
-          message.content.length > 40
-            ? message.content.slice(0, 40) + "…"
-            : message.content;
-      }
-
-      // ✅ Fix 8: Backup to localStorage on every message instantly
+      // ✅ No title logic here — handled by generateChatTitle thunk
+      // Backup to localStorage on every message instantly
       backupToLocalStorage(state.chats);
     },
 
@@ -388,7 +418,6 @@ const chatSlice = createSlice({
       state.currentChatId = null;
       if (typeof window !== "undefined") {
         localStorage.removeItem("currentChatId");
-        // ✅ Fix 9: Clear backup on logout
         localStorage.removeItem("chats_backup");
       }
     });
@@ -404,7 +433,6 @@ const chatSlice = createSlice({
           localStorage.removeItem("currentChatId");
         }
       }
-      // Update backup after delete
       backupToLocalStorage(state.chats);
     });
 
@@ -430,7 +458,7 @@ const chatSlice = createSlice({
     builder.addCase(pinChat.rejected, (state, action) => {
       const chatId = action.meta.arg;
       const chat = state.chats.find((c) => c.id === chatId);
-      if (chat) chat.pinned = !chat.pinned; // revert optimistic toggle
+      if (chat) chat.pinned = !chat.pinned;
     });
 
     // Share chat — store shareId
@@ -450,12 +478,13 @@ export const {
   switchChat,
   clearCurrentChat,
   setSelectedModel,
+  setChatTitle,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;
 
 // ─────────────────────────────────────────────────────────────
-// ✅ Fix 10: Memoized selectors — stops unnecessary rerenders
+// Memoized selectors — stops unnecessary rerenders
 // ─────────────────────────────────────────────────────────────
 
 export const selectCurrentChat = createSelector(
