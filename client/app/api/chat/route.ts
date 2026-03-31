@@ -307,19 +307,21 @@ export async function POST(req: NextRequest) {
           temperature: 0.7,
           max_tokens: 1024,
         };
-      } else if (selectedModel === "openrouter") {
-        apiKey = process.env.OPEN_ROUTER || "";
-        apiUrl = "https://openrouter.ai/api/v1/chat/completions";
-        headers["Authorization"] = `Bearer ${apiKey}`;
-        headers["HTTP-Referer"] = "http://localhost:3000";
-        headers["X-Title"] = "NxtAi";
-        requestBody = {
-          model: "google/gemma-2-9b-it:free",
-          messages: [
-            { role: "system", content: "You are NxtAI. Be concise." },
-            ...messages,
-          ],
-        };
+
+} else if (selectedModel === "gemini") {
+  apiKey = process.env.GEMINI_API || ""
+  apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+  headers["Authorization"] = `Bearer ${apiKey}`;
+  requestBody = {
+    model: "gemini-2.5-flash",
+    messages: [
+      { role: "system", content: "You are NxtAI. Be concise." },
+      ...messages,
+    ],
+    temperature: 0.7,
+    max_tokens: 1024,
+  };
+
       } else if (selectedModel === "deepseek") {
         apiKey = process.env.DEEP_SEEK_API || "";
         apiUrl = "https://api.deepseek.com/chat/completions";

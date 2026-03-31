@@ -62,6 +62,7 @@ const SUGGESTIONS = [
 ];
 
 const MODELS = [
+  { id: "gemini", name: "Gemini (2.5 flash)" },
   { id: "llama-3.3-70b-versatile", name: "Groq (Fast)" },
   { id: "cohere", name: "Cohere (Think)" },
   { id: "openrouter", name: "OpenRouter" },

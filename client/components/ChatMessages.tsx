@@ -2,15 +2,74 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message } from "@/app/store/chat-slice/chat";
-import { Bot, Copy, Check, User } from "lucide-react";
+import { Bot, Copy, Check, User, Download, X } from "lucide-react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Dialog, DialogTrigger, DialogContent, DialogClose } from "@/components/ui/dialog";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 interface ChatMessagesProps {
   messages: Message[];
   isLoading: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Fullscreen interactable image (Gemini Style)
+// ─────────────────────────────────────────────────────────────
+function GeminiImage({ src, alt }: { src: string; alt: string }) {
+  const [open, setOpen] = useState(false);
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const link = document.createElement("a");
+    link.href = src;
+    link.download = `${alt.slice(0, 30).replace(/[^a-zA-Z0-9]/g, "_") || "image"}.png`;
+    link.click();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <div className="relative group rounded-xl overflow-hidden cursor-zoom-in my-3 border border-white/10 max-w-md w-full shadow-lg transition-transform focus-within:ring-2 ring-primary">
+          <img src={src} alt={alt} className="w-full h-auto object-cover max-h-[400px]" />
+          
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-start justify-end p-2 pointer-events-none">
+            <button 
+              onClick={handleDownload}
+              className="pointer-events-auto cursor-pointer p-2 bg-black/50 hover:bg-black text-white rounded-full backdrop-blur-md transition-all scale-95 hover:scale-100"
+              title="Download image"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </DialogTrigger>
+
+      <DialogContent showCloseButton={false} className="border-none bg-transparent shadow-none w-[90vw] max-w-7xl max-h-screen p-0 flex flex-col items-center justify-center overflow-visible">
+        <div className="relative flex flex-col items-center w-full">
+          <div className="absolute -top-14 right-0 flex gap-3">
+            <button 
+              onClick={handleDownload}
+              className="p-2 bg-black/50 hover:bg-black text-white rounded-full transition-all backdrop-blur-md border border-white/10"
+              title="Download"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+            <DialogClose className="p-2 bg-black/50 hover:bg-black text-white rounded-full transition-all backdrop-blur-md border border-white/10 focus:outline-none">
+              <X className="w-5 h-5" />
+            </DialogClose>
+          </div>
+          <img 
+            src={src} 
+            alt={alt} 
+            className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-2xl ring-1 ring-white/10" 
+          />
+          {alt && <p className="text-white/70 text-sm mt-4 px-4 text-center max-w-2xl mx-auto truncate bg-black/40 rounded-full py-1 backdrop-blur-sm pointer-events-none">{alt}</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -37,10 +96,9 @@ function PersistentImage({ imageId, prompt }: { imageId: string; prompt: string 
   );
 
   return (
-    <div className="flex flex-col gap-2 my-2">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={src} alt={prompt} className="rounded-xl max-w-md w-full shadow-lg border border-white/10" />
-      <p className="text-xs text-muted-foreground">Prompt: {prompt}</p>
+    <div className="my-2 flex flex-col">
+      <GeminiImage src={src} alt={prompt} />
+      <p className="-mt-1 text-xs text-muted-foreground ml-1">Prompt: {prompt}</p>
     </div>
   );
 }
@@ -239,10 +297,9 @@ function AssistantContent({ content }: { content: string }) {
   const base64Match = content.match(/^!\[(.+?)\]\((data:image[^)]+)\)$/);
   if (base64Match) {
     return (
-      <div className="flex flex-col gap-2 my-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={base64Match[2]} alt={base64Match[1]} className="rounded-xl max-w-md w-full shadow-lg border border-white/10" />
-        <p className="text-xs text-muted-foreground">Prompt: {base64Match[1]}</p>
+      <div className="my-2 flex flex-col">
+        <GeminiImage src={base64Match[2]} alt={base64Match[1]} />
+        <p className="-mt-1 text-xs text-muted-foreground ml-1">Prompt: {base64Match[1]}</p>
       </div>
     );
   }
@@ -285,8 +342,7 @@ function AssistantContent({ content }: { content: string }) {
                     if (alt.startsWith("video:")) {
                       return <video key={j} src={url} controls className="rounded-xl max-w-md w-full my-3 border border-white/10" />;
                     }
-                    // eslint-disable-next-line @next/next/no-img-element
-                    return <img key={j} src={url} alt={alt} className="rounded-xl max-w-md w-full my-3 border border-white/10" />;
+                    return <GeminiImage key={j} src={url} alt={alt} />;
                   }
                 }
                 return <MarkdownText key={j} text={seg} />;
