@@ -80,6 +80,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(fetchChatHistory() as any);
