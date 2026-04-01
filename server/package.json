@@ -5,6 +5,7 @@
     "dev": "nodemon --watch .env --watch . server.js"
   },
   "dependencies": {
+    "@stream-io/node-sdk": "^0.7.50",
     "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.9.0",

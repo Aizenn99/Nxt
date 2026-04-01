@@ -14,10 +14,13 @@ import {
   Video,
   FileText,
   Square,
+  Camera,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { useSelector, useDispatch } from "react-redux";
@@ -41,6 +44,10 @@ import {
 } from "@/app/store/chat-slice/chat";
 import { logoutUser } from "@/app/store/auth-slice/auth";
 import { ChatMessages } from "@/components/ChatMessages";
+
+const VideoCall = dynamic(() => import("@/components/videocall"), {
+  ssr: false,
+});
 
 const SUGGESTIONS = [
   {
@@ -78,6 +85,8 @@ export default function Home() {
   const selectedModel = useSelector(selectSelectedModel);
 
   const [input, setInput] = useState("");
+  const [showVideoCall, setShowVideoCall] = useState(false);
+  const [videoCallId, setVideoCallId] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
 
@@ -134,6 +143,21 @@ export default function Home() {
         console.error("Logout failed in try-catch:", err);
       });
   }
+
+  const handleStartVideoCall = useCallback(() => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+      return;
+    }
+    const callId = `nxtai-${Date.now()}`;
+    setVideoCallId(callId);
+    setShowVideoCall(true);
+  }, [isAuthenticated, router]);
+
+  const handleEndVideoCall = useCallback(() => {
+    setShowVideoCall(false);
+    setVideoCallId("");
+  }, []);
 
   const hasMessages = messages.length > 0;
 
@@ -336,6 +360,16 @@ export default function Home() {
                   <Button
                     variant="ghost"
                     size="icon"
+                    onClick={handleStartVideoCall}
+                    className="rounded-full cursor-pointer text-muted-foreground hover:text-foreground relative group"
+                    title="Start AI Video Call"
+                  >
+                    <Camera className="w-5 h-5" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-400 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     className="rounded-full cursor-pointer text-muted-foreground hover:text-foreground"
                   >
                     <Mic className="w-5 h-5" />
@@ -369,6 +403,39 @@ export default function Home() {
             </div>
           </main>
         </div>
+
+        {/* Video Call Modal */}
+        {showVideoCall && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+              onClick={handleEndVideoCall}
+            />
+            {/* Modal */}
+            <div className="relative w-[95vw] h-[90vh] max-w-6xl rounded-3xl overflow-hidden border border-white/10 bg-[#1a1a2e]/95 backdrop-blur-xl shadow-2xl shadow-purple-500/10 animate-in fade-in zoom-in-95 duration-300">
+              {/* Header bar */}
+              <div className="absolute top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-gradient-to-b from-black/60 to-transparent">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-sm font-medium text-white/90">NxtAi Vision Agent</span>
+                  <span className="text-xs text-white/40 font-mono">• Live</span>
+                </div>
+                <button
+                  onClick={handleEndVideoCall}
+                  className="p-2 rounded-full bg-white/10 hover:bg-red-500/80 transition-all duration-200 group"
+                  title="End Call"
+                >
+                  <X className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
+                </button>
+              </div>
+              {/* Video Content */}
+              <div className="h-full w-full">
+                <VideoCall callId={videoCallId} onClose={handleEndVideoCall} />
+              </div>
+            </div>
+          </div>
+        )}
       </SidebarInset>
     </>
   );
