@@ -123,22 +123,19 @@ export default function VideoCall({ callId, onClose }: VideoCallProps) {
   }
 
   return (
-    <div className="relative h-full w-full">
-      {onClose && (
-        <button
-          onClick={handleClose}
-          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/60 backdrop-blur-sm hover:bg-red-500/80 transition-all duration-200 group"
-          title="End Call"
-        >
-          <X className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
-        </button>
-      )}
-      <StreamVideo client={client}>
-        <StreamCall call={call}>
-          <SpeakerLayout />
-          <CallControls onLeave={handleClose} />
-        </StreamCall>
-      </StreamVideo>
+    <div className="relative h-full w-full bg-black/90 backdrop-blur-xl rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col">
+      <div className="flex-1 w-full h-full relative str-video">
+        <StreamVideo client={client}>
+          <StreamCall call={call}>
+            <div className="absolute inset-0">
+              <SpeakerLayout />
+            </div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
+              <CallControls onLeave={handleClose} />
+            </div>
+          </StreamCall>
+        </StreamVideo>
+      </div>
     </div>
   )
 }

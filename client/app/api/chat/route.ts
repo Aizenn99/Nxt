@@ -351,6 +351,7 @@ export async function POST(req: NextRequest) {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody),
+        signal: req.signal,
       });
 
       if (!response.ok) {

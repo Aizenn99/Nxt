@@ -87,9 +87,13 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [showVideoCall, setShowVideoCall] = useState(false);
   const [videoCallId, setVideoCallId] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const currentRequestRef = useRef<{ abort: () => void } | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
   useEffect(() => {
     if (isAuthenticated) {
       dispatch(fetchChatHistory() as any);
@@ -119,7 +123,99 @@ export default function Home() {
       return;
     }
     resetTextarea();
-    dispatch(sendChatMessage(trimmed) as any);
+    const promise = dispatch(sendChatMessage(trimmed) as any);
+    currentRequestRef.current = promise;
+  };
+
+  const handleStopGeneration = () => {
+    if (currentRequestRef.current) {
+      currentRequestRef.current.abort();
+    }
+  };
+
+  const handleFileSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setInput((prev) => prev + `\n\n[File Content: ${file.name}]\n${content}\n`);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ""; // Reset
+  };
+
+  const handleToggleRecording = async () => {
+    if (isRecording) {
+      mediaRecorderRef.current?.stop();
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        setIsTranscribing(true);
+        const prevInput = input;
+        setInput((prev) => prev + (prev ? " " : "") + "(Transcribing audio...)");
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("file", audioBlob, "recording.webm");
+
+        try {
+          const res = await fetch("/api/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await res.json();
+          
+          setInput((current) => {
+            // Remove the loading message and append actual text
+            const withoutLoading = current.replace("(Transcribing audio...)", "").trim();
+            if (data.text) {
+              return withoutLoading + (withoutLoading && !withoutLoading.endsWith(" ") ? " " : "") + data.text.trim();
+            } else if (data.error || data.details) {
+              return withoutLoading + ` [STT Error: ${data.error || JSON.stringify(data)}]`;
+            } else {
+              return withoutLoading + " [No speech detected]";
+            }
+          });
+        } catch (error: any) {
+          console.error("Transcription error", error);
+          setInput((current) => current.replace("(Transcribing audio...)", "").trim() + ` [Network Error: ${error.message}]`);
+        } finally {
+          setIsTranscribing(false);
+        }
+
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Microphone access denied", err);
+      alert("Please enable microphone permissions.");
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -319,11 +415,19 @@ export default function Home() {
             {/* Input Bar */}
             <div className="w-full max-w-3xl absolute md:mr-4  bottom-0 py-4 px-4 bg-black rounded-xl">
               <div className="relative flex items-end rounded-3xl border bg-muted/30 shadow-sm p-1 pr-4 transition-all focus-within:ring-1 focus-within:ring-border focus-within:bg-muted/50">
+                <input
+                  type="file"
+                  accept=".txt,.md,.js,.ts,.jsx,.tsx,.py,.csv,.json"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
                 <Button
                   variant="ghost"
                   size="icon"
                   className="mb-0.5 cursor-pointer rounded-full text-muted-foreground hover:text-foreground shrink-0"
                   title="Attach File / Media"
+                  onClick={handleFileSelect}
                 >
                   <Paperclip className="w-5 h-5" />
                 </Button>
@@ -370,19 +474,27 @@ export default function Home() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="rounded-full cursor-pointer text-muted-foreground hover:text-foreground"
+                    onClick={handleToggleRecording}
+                    disabled={isTranscribing}
+                    className={`rounded-full cursor-pointer transition-colors ${
+                      isRecording
+                        ? "text-red-500 bg-red-500/10 animate-pulse hover:text-red-400"
+                        : isTranscribing
+                        ? "text-blue-400 animate-spin"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    title={isRecording ? "Stop Recording" : isTranscribing ? "Transcribing..." : "Start Voice Typing"}
                   >
                     <Mic className="w-5 h-5" />
                   </Button>
                   {isLoading ? (
                     <Button
                       size="icon"
-                      onClick={() => {
-                        /* stop not supported with thunk, but UI shows correctly */
-                      }}
+                      onClick={handleStopGeneration}
                       className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90"
+                      title="Stop Generation"
                     >
-                      <Square className="w-4 h-4 fill-current" />
+                      <Square className="w-4 h-4 fill-current text-background" />
                     </Button>
                   ) : (
                     <Button

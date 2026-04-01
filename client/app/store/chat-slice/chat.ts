@@ -232,7 +232,7 @@ export const generateChatTitle = createAsyncThunk(
 
 export const sendChatMessage = createAsyncThunk(
   "chat/send",
-  async (userText: string, { dispatch, getState }) => {
+  async (userText: string, { dispatch, getState, signal }) => {
     const state = getState() as { chat: ChatState };
 
     let chatId = state.chat.currentChatId;
@@ -290,6 +290,7 @@ export const sendChatMessage = createAsyncThunk(
               (c) => c.id === chatId,
             )?.title ?? "Chat Document",
         }),
+        signal,
       });
 
       const data = await res.json();
@@ -311,16 +312,29 @@ export const sendChatMessage = createAsyncThunk(
         }),
       );
     } catch (err: any) {
-      dispatch(
-        addMessage({
-          chatId,
-          message: {
-            role: "assistant",
-            content: `⚠️ ${err.message}`,
-            timestamp: Date.now(),
-          },
-        }),
-      );
+      if (err.name === 'AbortError') {
+        dispatch(
+          addMessage({
+            chatId,
+            message: {
+              role: "assistant",
+              content: `⚠️ Generation stopped by user.`,
+              timestamp: Date.now(),
+            },
+          }),
+        );
+      } else {
+        dispatch(
+          addMessage({
+            chatId,
+            message: {
+              role: "assistant",
+              content: `⚠️ ${err.message}`,
+              timestamp: Date.now(),
+            },
+          }),
+        );
+      }
     } finally {
       dispatch(setLoading(false));
       dispatch(syncChatHistory());

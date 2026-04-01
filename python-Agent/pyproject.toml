@@ -6,4 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "vision-agents[deepgram,elevenlabs,gemini,getstream]>=0.4.7",
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
 ]
