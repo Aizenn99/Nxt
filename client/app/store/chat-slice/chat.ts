@@ -14,6 +14,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  attachments?: { name: string; type: string; base64: string }[];
 }
 
 export interface Chat {
@@ -57,6 +58,7 @@ const stripBase64FromChats = (chats: Chat[]): Chat[] => {
     ...chat,
     messages: chat.messages.map((msg) => ({
       ...msg,
+      attachments: msg.attachments?.map((att) => ({ ...att, base64: "" })), // Strip massive base64 from backup
       content: msg.content
         // Strip image base64
         .replace(/data:image\/[a-z]+;base64,[A-Za-z0-9+/=]+/g, "[image]")
@@ -232,7 +234,11 @@ export const generateChatTitle = createAsyncThunk(
 
 export const sendChatMessage = createAsyncThunk(
   "chat/send",
-  async (userText: string, { dispatch, getState, signal }) => {
+  async (
+    payload: { userText: string; attachments?: { name: string; type: string; base64: string }[] },
+    { dispatch, getState, signal },
+  ) => {
+    const { userText, attachments } = payload;
     const state = getState() as { chat: ChatState };
 
     let chatId = state.chat.currentChatId;
@@ -247,11 +253,11 @@ export const sendChatMessage = createAsyncThunk(
     const existingHistory =
       (getState() as { chat: ChatState }).chat.chats
         .find((c) => c.id === chatId)
-        ?.messages.map((m) => ({ role: m.role, content: m.content })) ?? [];
+        ?.messages.map((m) => ({ role: m.role, content: m.content, attachments: m.attachments })) ?? [];
 
     const fullHistory = [
       ...existingHistory,
-      { role: "user" as const, content: userText },
+      { role: "user" as const, content: userText, attachments },
     ];
 
     dispatch(
@@ -261,6 +267,7 @@ export const sendChatMessage = createAsyncThunk(
           role: "user",
           content: userText,
           timestamp: Date.now(),
+          attachments,
         },
       }),
     );

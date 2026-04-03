@@ -166,6 +166,16 @@ export async function POST(req: NextRequest) {
 
       const { remainingCredits } = await deductRes.json();
 
+      const hfKey = process.env.HF_API || "";
+      if (!hfKey) {
+        return NextResponse.json(
+          { error: "HF_API key not configured" },
+          { status: 500 },
+        );
+      }
+
+      // ── fal.ai — Wan2.1 T2V Turbo (free tier available) ────────────
+      // Sign up at fal.ai for a free API key. No credit card required for free tier.
       const falKey = process.env.FAL_AI || "";
       if (!falKey) {
         return NextResponse.json(
@@ -175,27 +185,40 @@ export async function POST(req: NextRequest) {
       }
 
       const falRes = await fetch(
-        "https://fal.run/fal-ai/kling-video/v1/standard/text-to-video",
+        "https://fal.run/fal-ai/wan/v2.1/text-to-video",
         {
           method: "POST",
           headers: {
             Authorization: `Key ${falKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({
+            prompt,
+            negative_prompt: "low quality, blurry, distorted, watermark",
+            num_inference_steps: 30,
+            guidance_scale: 5.0,
+          }),
         },
       );
 
       if (!falRes.ok) {
-        const err = await falRes.text();
+        const errText = await falRes.text();
+        console.error("❌ fal.ai video error:", falRes.status, errText);
         return NextResponse.json(
-          { error: `Video generation failed: ${err}` },
+          { error: `Video generation failed: ${errText}` },
           { status: 500 },
         );
       }
 
-      const data = await falRes.json();
-      const videoUrl = data.video?.url || data.url;
+      const falData = await falRes.json();
+      const videoUrl = falData?.video?.url ?? falData?.url ?? "";
+      if (!videoUrl) {
+        console.error("❌ No video URL in fal response:", falData);
+        return NextResponse.json(
+          { error: "Video generation failed: no URL returned" },
+          { status: 500 },
+        );
+      }
 
       return NextResponse.json({
         reply: `![video:${prompt}](${videoUrl})`,
@@ -254,9 +277,37 @@ export async function POST(req: NextRequest) {
     }
 
     // ─────────────────────────────────────────
-    // Default — text chat (call AI first, deduct after)
+    // Pre-process Messages (Handle Attachments)
     // ─────────────────────────────────────────
     const selectedModel = model || "llama-3.3-70b-versatile";
+    
+    // Convert base64 text files back to raw strings for all models to read seamlessly
+    const parsedMessages = messages.map((m: any) => {
+      let text = m.content || "";
+      const cleanedAttachments: any[] = [];
+      
+      if (m.attachments && Array.isArray(m.attachments)) {
+        m.attachments.forEach((att: any) => {
+          if (!att.base64) return;
+          const isText = att.type.startsWith("text/") || 
+                         att.type === "application/json" || 
+                         /\.(md|txt|js|jsx|ts|tsx|py|csv|json)$/.test(att.name.toLowerCase());
+                         
+          if (isText) {
+            try {
+              const base64Data = att.base64.split(',')[1] || att.base64;
+              const decodedText = Buffer.from(base64Data, 'base64').toString('utf-8');
+              text += `\n\n[File Content: ${att.name}]\n${decodedText}\n`;
+            } catch(e) { /* ignore parse error */ }
+          } else {
+            cleanedAttachments.push(att); // Push non-text (Image/PDF) for Vision processing
+          }
+        });
+      }
+      
+      return { ...m, content: text, attachments: cleanedAttachments };
+    });
+
     let reply = "";
 
     if (selectedModel === "cohere") {
@@ -272,10 +323,14 @@ export async function POST(req: NextRequest) {
 
       const cohereMessages = [
         { role: "system", content: "You are NxtAI. Be concise." },
-        ...messages.map((m: any) => ({
-          role: m.role === "assistant" ? "assistant" : "user",
-          content: m.content,
-        })),
+        ...parsedMessages.map((m: any) => {
+          let finalContent = m.content;
+          if (m.attachments.length > 0) {
+            const blocked = m.attachments.map((a: any)=>a.name).join(", ");
+            finalContent += `\n\n[System Note: User attached media files: ${blocked}. This model cannot process images/complex media. Please inform the user gracefully.]`;
+          }
+          return { role: m.role === "assistant" ? "assistant" : "user", content: finalContent };
+        }),
       ];
 
       const response = await cohere.chat({
@@ -295,32 +350,57 @@ export async function POST(req: NextRequest) {
         apiKey = process.env.GROQ_API_KEY || "";
         apiUrl = "https://api.groq.com/openai/v1/chat/completions";
         headers["Authorization"] = `Bearer ${apiKey}`;
+        
         requestBody = {
           model: "llama-3.3-70b-versatile",
           messages: [
-            {
-              role: "system",
-              content: "You are NxtAI. Be concise and helpful.",
-            },
-            ...messages,
+            { role: "system", content: "You are NxtAI. Be concise and helpful." },
+            ...parsedMessages.map((m: any) => {
+              let finalContent = m.content;
+              if (m.attachments.length > 0) {
+                const blocked = m.attachments.map((a: any)=>a.name).join(", ");
+                finalContent += `\n\n[System Note: User attached media files: ${blocked}. The vision/binary data was dropped because this model does not support image analysis.]`;
+              }
+              return { role: m.role, content: finalContent };
+            }),
           ],
           temperature: 0.7,
           max_tokens: 1024,
         };
 
-} else if (selectedModel === "gemini") {
-  apiKey = process.env.GEMINI_API || ""
-  apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-  headers["Authorization"] = `Bearer ${apiKey}`;
-  requestBody = {
-    model: "gemini-2.5-flash",
-    messages: [
-      { role: "system", content: "You are NxtAI. Be concise." },
-      ...messages,
-    ],
-    temperature: 0.7,
-    max_tokens: 1024,
-  };
+      } else if (selectedModel === "gemini") {
+        apiKey = process.env.GEMINI_API || "";
+        // ✅ Native Google API handles attachments perfectly using inlineData
+        apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        delete headers["Authorization"]; // Key is strictly in URL params
+        
+        const geminiContents = parsedMessages.map((m: any) => {
+          const parts: any[] = [{ text: m.content }];
+          
+          m.attachments.forEach((att: any) => {
+             const base64Data = att.base64.split(',')[1] || att.base64;
+             parts.push({
+               inlineData: {
+                 mimeType: att.type || "application/octet-stream",
+                 data: base64Data
+               }
+             });
+          });
+          
+          return {
+            role: m.role === "assistant" ? "model" : "user",
+            parts
+          };
+        });
+
+        requestBody = {
+          systemInstruction: {
+            role: "system",
+            parts: [{ text: "You are NxtAI. Be concise." }]
+          },
+          contents: geminiContents,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+        };
 
       } else if (selectedModel === "deepseek") {
         apiKey = process.env.DEEP_SEEK_API || "";
@@ -330,7 +410,14 @@ export async function POST(req: NextRequest) {
           model: "deepseek-chat",
           messages: [
             { role: "system", content: "You are NxtAI. Be concise." },
-            ...messages,
+            ...parsedMessages.map((m: any) => {
+              let finalContent = m.content;
+              if (m.attachments.length > 0) {
+                const blocked = m.attachments.map((a: any)=>a.name).join(", ");
+                finalContent += `\n\n[System Note: User attached media files: ${blocked}. The vision/binary data was dropped because this model does not support image analysis.]`;
+              }
+              return { role: m.role, content: finalContent };
+            }),
           ],
         };
       } else {
@@ -364,7 +451,11 @@ export async function POST(req: NextRequest) {
       }
 
       const data = await response.json();
-      reply = data.choices?.[0]?.message?.content || "";
+      
+      // Handle native Gemini reply structure OR standard OpenAI choice structure
+      reply = data.candidates?.[0]?.content?.parts?.[0]?.text 
+              || data.choices?.[0]?.message?.content 
+              || "";
     }
 
     // Deduct credits AFTER successful AI response

@@ -89,6 +89,7 @@ export default function Home() {
   const [videoCallId, setVideoCallId] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [attachments, setAttachments] = useState<{name: string, type: string, base64: string, preview?: string}[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentRequestRef = useRef<{ abort: () => void } | null>(null);
@@ -117,13 +118,18 @@ export default function Home() {
 
   const handleSend = (text = input) => {
     const trimmed = text.trim();
-    if (!trimmed || isLoading) return;
+    if (!trimmed && attachments.length === 0 || isLoading) return;
     if (!isAuthenticated) {
       router.push("/auth/login");
       return;
     }
     resetTextarea();
-    const promise = dispatch(sendChatMessage(trimmed) as any);
+    
+    // Decouple attachments and string
+    const attachedPayload = [...attachments];
+    setAttachments([])
+
+    const promise = dispatch(sendChatMessage({ userText: trimmed, attachments: attachedPayload }) as any);
     currentRequestRef.current = promise;
   };
 
@@ -143,14 +149,23 @@ export default function Home() {
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      setInput((prev) => prev + `\n\n[File Content: ${file.name}]\n${content}\n`);
+      const result = event.target?.result as string;
+      
+      const newAttachment = {
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        base64: result,
+        preview: file.type.startsWith("image/") ? result : undefined
+      };
+      
+      setAttachments(prev => [...prev, newAttachment]);
+      
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
         textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
       }
     };
-    reader.readAsText(file);
+    reader.readAsDataURL(file);
     e.target.value = ""; // Reset
   };
 
@@ -413,21 +428,40 @@ export default function Home() {
             )}
 
             {/* Input Bar */}
-            <div className="w-full max-w-3xl absolute md:mr-4  bottom-0 py-4 px-4 bg-black rounded-xl">
-              <div className="relative flex items-end rounded-3xl border bg-muted/30 shadow-sm p-1 pr-4 transition-all focus-within:ring-1 focus-within:ring-border focus-within:bg-muted/50">
-                <input
-                  type="file"
-                  accept=".txt,.md,.js,.ts,.jsx,.tsx,.py,.csv,.json"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="mb-0.5 cursor-pointer rounded-full text-muted-foreground hover:text-foreground shrink-0"
-                  title="Attach File / Media"
-                  onClick={handleFileSelect}
+            <div className="w-full max-w-3xl absolute md:mr-4 bottom-0 py-4 px-4 bg-black rounded-xl">
+              <div className="relative flex flex-col rounded-3xl border bg-muted/30 shadow-sm p-1 pr-4 transition-all focus-within:ring-1 focus-within:ring-border focus-within:bg-muted/50">
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 px-3 pt-3 pb-1 w-full">
+                    {attachments.map((att, i) => (
+                      <div key={i} className="relative group rounded-xl overflow-hidden bg-muted/80 border flex items-center p-1.5 px-3">
+                        {att.preview ? (
+                          <img src={att.preview} alt={att.name} className="w-8 h-8 object-cover rounded mr-2" />
+                        ) : (
+                          <FileText className="w-5 h-5 text-muted-foreground mr-2" />
+                        )}
+                        <span className="text-xs font-medium truncate max-w-[120px]">{att.name}</span>
+                        <button onClick={() => setAttachments(p => p.filter((_, idx) => idx !== i))} className="ml-2 text-muted-foreground hover:text-red-400">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="flex items-end w-full">
+                  <input
+                    type="file"
+                    accept="*"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="mb-0.5 cursor-pointer rounded-full text-muted-foreground hover:text-foreground shrink-0"
+                    title="Attach File / Media"
+                    onClick={handleFileSelect}
                 >
                   <Paperclip className="w-5 h-5" />
                 </Button>
@@ -446,7 +480,7 @@ export default function Home() {
                     size="icon"
                     className="h-8 w-8 text-muted-foreground hover:text-foreground"
                     title="Generate Video"
-                    onClick={() => setInput((prev) => prev + "/video ")}
+                    onClick={() => router.push("/dashboard/create")}
                   >
                     <Video className="w-4 h-4" />
                   </Button>
@@ -500,7 +534,7 @@ export default function Home() {
                     <Button
                       size="icon"
                       onClick={() => handleSend()}
-                      disabled={!input.trim()}
+                      disabled={!input.trim() && attachments.length === 0}
                       className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
                     >
                       <Send className="w-5 h-5" />
@@ -508,6 +542,7 @@ export default function Home() {
                   )}
                 </div>
               </div>
+            </div>
               <p className="text-xs text-center text-muted-foreground mt-3">
                 NxtAi may display inaccurate info, so double-check its
                 responses.

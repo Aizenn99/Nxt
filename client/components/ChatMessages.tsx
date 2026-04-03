@@ -399,21 +399,40 @@ export function ChatMessages({ messages, isLoading }: ChatMessagesProps) {
         if (msg.role === "user") {
           return (
             <div key={msg.id} className="flex justify-end">
-              <div className="flex items-start gap-2 max-w-[80%]">
-                <div
-                  className="bg-muted/60 border border-white/5 rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-foreground leading-relaxed"
-                  style={{
-                    // ✅ Fix horizontal scroll on long code pastes
-                    overflowWrap: "break-word",
-                    wordBreak: "break-word",
-                    whiteSpace: "pre-wrap",
-                    minWidth: 0,
-                  }}
-                >
-                  {msg.content}
-                </div>
-                <div className="shrink-0 w-7 h-7 rounded-full bg-muted/60 border border-white/10 flex items-center justify-center mt-0.5">
-                  <User className="w-3.5 h-3.5 text-muted-foreground" />
+              <div className="flex flex-col items-end gap-2 max-w-[80%]">
+                
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    {msg.attachments.map((att, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl p-1 pr-3 max-w-xs">
+                        {att.type.startsWith("image/") && att.base64 ? (
+                          <img src={att.base64} alt={att.name} className="w-10 h-10 object-cover rounded-lg shrink-0 border border-white/5" />
+                        ) : (
+                          <div className="w-10 h-10 bg-white/10 rounded-lg flex items-center justify-center shrink-0">
+                            <span className="text-lg">📄</span>
+                          </div>
+                        )}
+                        <span className="text-xs text-muted-foreground truncate font-medium">{att.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-start gap-2 w-full justify-end">
+                  <div
+                    className="bg-muted/60 border border-white/5 rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-foreground leading-relaxed inline-block"
+                    style={{
+                      overflowWrap: "break-word",
+                      wordBreak: "break-word",
+                      whiteSpace: "pre-wrap",
+                      minWidth: 0,
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-muted/60 border border-white/10 flex items-center justify-center mt-0.5">
+                    <User className="w-3.5 h-3.5 text-muted-foreground" />
+                  </div>
                 </div>
               </div>
             </div>
