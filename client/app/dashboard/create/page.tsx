@@ -54,6 +54,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import axios from "axios";
 import { toast } from "sonner";
+import { DashboardSidebar } from "../DashboardSidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -99,51 +101,6 @@ const availableNiches = [
   },
 ];
 
-// Sidebar
-function VideoSidebar() {
-  return (
-    <Sidebar className="border-r border-white/10">
-      <SidebarHeader className="p-4 border-b  border-white/10">
-        <h2 className="text-sm uppercase tracking-wide mb-4  text-muted-foreground">
-          Video Dashboard
-        </h2>
-      </SidebarHeader>
-
-      <SidebarContent className="px-2 py-4">
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton className="gap-3 rounded-xl bg-white/5 cursor-pointer  h-10">
-                <Plus className="w-4 h-4 text-purple-400" />
-                Create Series
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-
-        <SidebarGroup className="mt-4">
-          <SidebarMenu className="gap-2">
-            <SidebarMenuItem>
-              <SidebarMenuButton className="gap-3 rounded-xl h-10">
-                <ListVideo className="w-4 h-4" /> Series
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton className="gap-3 rounded-xl h-10">
-                <Video className="w-4 h-4" /> Videos
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton className="gap-3 rounded-xl h-10">
-                <BookText className="w-4 h-4" /> Guides
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
-  );
-}
 
 export default function CreateVideo() {
   const user = useSelector((state: any) => state.auth.user);
@@ -279,7 +236,7 @@ export default function CreateVideo() {
         toast.success("Series scheduled and data saved via API!");
         console.log("API Response:", response.data);
         setTimeout(() => {
-          router.push("/dashboard/create");
+          router.push("/dashboard");
         }, 1500); // 1.5s delay to allow toast to be visible
       } else {
         throw new Error(response.data.message || "Failed to schedule series");
@@ -319,10 +276,10 @@ export default function CreateVideo() {
   );
 
   return (
-    <>
-      <VideoSidebar />
-
-      <SidebarInset className="bg-[#0b0b0f] text-white min-h-screen">
+    <SidebarProvider>
+      <div className="flex bg-[#050505] min-h-screen w-full font-sans text-white overflow-hidden">
+        <DashboardSidebar />
+        <SidebarInset className="flex-1 bg-transparent">
         {/* Navbar */}
         <header className="flex justify-between items-center px-6 py-4 border-b border-white/10">
           <div className="flex items-center gap-4">
@@ -916,7 +873,8 @@ export default function CreateVideo() {
             </div>
           )}
         </main>
-      </SidebarInset>
-    </>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
   );
 }
