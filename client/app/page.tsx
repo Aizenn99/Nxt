@@ -89,7 +89,7 @@ export default function Home() {
   const [videoCallId, setVideoCallId] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [attachments, setAttachments] = useState<{name: string, type: string, base64: string, preview?: string}[]>([]);
+  const [attachments, setAttachments] = useState<{ name: string, type: string, base64: string, preview?: string }[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentRequestRef = useRef<{ abort: () => void } | null>(null);
@@ -124,7 +124,7 @@ export default function Home() {
       return;
     }
     resetTextarea();
-    
+
     // Decouple attachments and string
     const attachedPayload = [...attachments];
     setAttachments([])
@@ -150,16 +150,16 @@ export default function Home() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
-      
+
       const newAttachment = {
         name: file.name,
         type: file.type || "application/octet-stream",
         base64: result,
         preview: file.type.startsWith("image/") ? result : undefined
       };
-      
+
       setAttachments(prev => [...prev, newAttachment]);
-      
+
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
         textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
@@ -203,7 +203,7 @@ export default function Home() {
             body: formData,
           });
           const data = await res.json();
-          
+
           setInput((current) => {
             // Remove the loading message and append actual text
             const withoutLoading = current.replace("(Transcribing audio...)", "").trim();
@@ -447,7 +447,7 @@ export default function Home() {
                     ))}
                   </div>
                 )}
-                
+
                 <div className="flex items-end w-full">
                   <input
                     type="file"
@@ -462,87 +462,86 @@ export default function Home() {
                     className="mb-0.5 cursor-pointer rounded-full text-muted-foreground hover:text-foreground shrink-0"
                     title="Attach File / Media"
                     onClick={handleFileSelect}
-                >
-                  <Paperclip className="w-5 h-5" />
-                </Button>
-                <div className="flex items-center justify-center mb-1 gap-1 mx-2 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Generate Image"
-                    onClick={() => setInput((prev) => prev + "/image ")}
                   >
-                    <ImageIcon className="w-4 h-4" />
+                    <Paperclip className="w-5 h-5" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                    title="Generate Video"
-                    onClick={() => router.push("/dashboard/create")}
-                  >
-                    <Video className="w-4 h-4" />
-                  </Button>
-                </div>
-                <Textarea
-                  ref={textareaRef}
-                  value={input}
-                  onInput={handleInput}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Enter a prompt here..."
-                  className="flex-1 border-none shadow-none focus-visible:ring-0 text-base px-2 resize-none min-h-[40px] max-h-[160px] py-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-                  rows={1}
-                />
-                <div className="flex items-center gap-2 shrink-0 mb-0.5">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleStartVideoCall}
-                    className="rounded-full cursor-pointer text-muted-foreground hover:text-foreground relative group"
-                    title="Start AI Video Call"
-                  >
-                    <Camera className="w-5 h-5" />
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-400 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleToggleRecording}
-                    disabled={isTranscribing}
-                    className={`rounded-full cursor-pointer transition-colors ${
-                      isRecording
+                  <div className="flex items-center justify-center mb-1 gap-1 mx-2 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      title="Generate Image"
+                      onClick={() => setInput((prev) => prev + "/image ")}
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      title="Generate Video"
+                      onClick={() => router.push("/dashboard/create")}
+                    >
+                      <Video className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <Textarea
+                    ref={textareaRef}
+                    value={input}
+                    onInput={handleInput}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Enter a prompt here..."
+                    className="flex-1 border-none shadow-none focus-visible:ring-0 text-base px-2 resize-none min-h-[40px] max-h-[160px] py-2 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                    rows={1}
+                  />
+                  <div className="flex items-center gap-2 shrink-0 mb-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleStartVideoCall}
+                      className="rounded-full cursor-pointer text-muted-foreground hover:text-foreground relative group"
+                      title="Start AI Video Call"
+                    >
+                      <Camera className="w-5 h-5" />
+                      <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-400 opacity-0 group-hover:opacity-100 transition-opacity animate-pulse" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleToggleRecording}
+                      disabled={isTranscribing}
+                      className={`rounded-full cursor-pointer transition-colors ${isRecording
                         ? "text-red-500 bg-red-500/10 animate-pulse hover:text-red-400"
                         : isTranscribing
-                        ? "text-blue-400 animate-spin"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    title={isRecording ? "Stop Recording" : isTranscribing ? "Transcribing..." : "Start Voice Typing"}
-                  >
-                    <Mic className="w-5 h-5" />
-                  </Button>
-                  {isLoading ? (
-                    <Button
-                      size="icon"
-                      onClick={handleStopGeneration}
-                      className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90"
-                      title="Stop Generation"
+                          ? "text-blue-400 animate-spin"
+                          : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      title={isRecording ? "Stop Recording" : isTranscribing ? "Transcribing..." : "Start Voice Typing"}
                     >
-                      <Square className="w-4 h-4 fill-current text-background" />
+                      <Mic className="w-5 h-5" />
                     </Button>
-                  ) : (
-                    <Button
-                      size="icon"
-                      onClick={() => handleSend()}
-                      disabled={!input.trim() && attachments.length === 0}
-                      className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
-                    >
-                      <Send className="w-5 h-5" />
-                    </Button>
-                  )}
+                    {isLoading ? (
+                      <Button
+                        size="icon"
+                        onClick={handleStopGeneration}
+                        className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90"
+                        title="Stop Generation"
+                      >
+                        <Square className="w-4 h-4 fill-current text-background" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon"
+                        onClick={() => handleSend()}
+                        disabled={!input.trim() && attachments.length === 0}
+                        className="rounded-full cursor-pointer bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
+                      >
+                        <Send className="w-5 h-5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
               <p className="text-xs text-center text-muted-foreground mt-3">
                 NxtAi may display inaccurate info, so double-check its
                 responses.
