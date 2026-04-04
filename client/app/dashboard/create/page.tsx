@@ -19,6 +19,12 @@ import {
   Volume2,
   Music2,
   Pause,
+  Youtube,
+  Instagram,
+  Twitter,
+  Mail,
+  Clock,
+  Layout,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -40,16 +46,19 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
 import { useSelector } from "react-redux";
-import { LANGUAGE_OPTIONS, VOICE_MODELS, BG_MUSIC_TRACKS } from "./constants";
-import type { LanguageOption, VoiceModel, BgMusicTrack } from "./constants";
+import { LANGUAGE_OPTIONS, VOICE_MODELS, BG_MUSIC_TRACKS, VIDEO_STYLES, CAPTION_STYLES, DURATION_OPTIONS, PLATFORMS } from "./constants";
+import type { LanguageOption, VoiceModel, BgMusicTrack, VideoStyle, CaptionStyle } from "./constants";
+import { CaptionPreview } from "./CaptionPreview";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const steps = [
   "Niche Selection",
   "Language & Voice",
   "Background Music",
-  "Script Generation",
-  "Visual Assets",
-  "Render Video",
+  "Video Style",
+  "Caption Style",
+  "Series Details",
 ];
 
 const availableNiches = [
@@ -152,6 +161,13 @@ export default function CreateVideo() {
     languageObj: LanguageOption | null;
     voiceObj: VoiceModel | null;
     bgMusic: BgMusicTrack[];
+    videoStyle: VideoStyle | null;
+    captionStyle: CaptionStyle | null;
+    seriesName: string;
+    duration: string;
+    platforms: string[];
+    publishTime: string;
+    publishPeriod: "AM" | "PM";
   }>({
     niche: null,
     customNiche: "",
@@ -159,6 +175,13 @@ export default function CreateVideo() {
     languageObj: null,
     voiceObj: null,
     bgMusic: [],
+    videoStyle: null,
+    captionStyle: null,
+    seriesName: "",
+    duration: "",
+    platforms: [],
+    publishTime: "",
+    publishPeriod: "AM",
   });
 
   const toggleBgMusic = (track: BgMusicTrack) => {
@@ -207,7 +230,21 @@ export default function CreateVideo() {
       return formData.languageObj !== null && formData.voiceObj !== null;
     }
     if (currentStep === 3) {
-      return formData.bgMusic.length > 0;
+      return true;
+    }
+    if (currentStep === 4) {
+      return formData.videoStyle !== null;
+    }
+    if (currentStep === 5) {
+      return formData.captionStyle !== null;
+    }
+    if (currentStep === 6) {
+      return (
+        formData.seriesName.trim().length > 0 &&
+        formData.duration !== "" &&
+        formData.platforms.length > 0 &&
+        formData.publishTime !== ""
+      );
     }
     return true;
   };
@@ -224,12 +261,19 @@ export default function CreateVideo() {
       </Button>
 
       <Button
-        onClick={() => setCurrentStep((s) => s + 1)}
+        onClick={() => {
+          if (currentStep < 6) {
+            setCurrentStep((s) => s + 1);
+          } else {
+            alert("Series Scheduled Successfully!");
+            console.log("Final Series Data:", formData);
+          }
+        }}
         disabled={!isValidStep()}
         className="rounded-xl cursor-pointer flex items-center gap-2"
       >
-        {currentStep === 6 ? "Finish" : "Continue"}
-        <ArrowRight className="w-4 h-4" />
+        {currentStep === 6 ? "Schedule Series" : "Continue"}
+        {currentStep === 6 ? <Clock className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
       </Button>
     </div>
   );
@@ -425,10 +469,10 @@ export default function CreateVideo() {
                               <span className="text-xs text-muted-foreground uppercase tracking-wider">
                                 Model: {voice.model}
                               </span>
-                              
-                              <Button 
-                                size="sm" 
-                                variant="ghost" 
+
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 className={`h-8 w-8 p-0 rounded-full ${isPlaying ? "bg-purple-500/20 text-purple-400" : "hover:bg-white/10"}`}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -449,7 +493,7 @@ export default function CreateVideo() {
                     </div>
                   </div>
                 )}
-               </div>
+              </div>
 
               <StepFooter />
             </div>
@@ -464,7 +508,7 @@ export default function CreateVideo() {
                 <div>
                   <h2 className="text-xl font-semibold">Background Music</h2>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    Pick one or more tracks to set the mood — preview before you choose.
+                    Pick one or more tracks (optional) — preview before you choose.
                   </p>
                 </div>
               </div>
@@ -529,13 +573,12 @@ export default function CreateVideo() {
                           {[4, 8, 6, 10, 7, 12, 5, 9, 11, 6, 8, 4, 10, 7].map((h, i) => (
                             <div
                               key={i}
-                              className={`w-[3px] rounded-full transition-all duration-300 ${
-                                isPlaying
-                                  ? "bg-purple-400 animate-pulse"
-                                  : isSelected
+                              className={`w-[3px] rounded-full transition-all duration-300 ${isPlaying
+                                ? "bg-purple-400 animate-pulse"
+                                : isSelected
                                   ? "bg-purple-500/60"
                                   : "bg-white/20"
-                              }`}
+                                }`}
                               style={{
                                 height: `${h}px`,
                                 animationDelay: isPlaying ? `${i * 60}ms` : "0ms",
@@ -573,13 +616,262 @@ export default function CreateVideo() {
             </div>
           )}
 
-          {/* Placeholders for subsequent steps */}
-          {currentStep > 3 && (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-500 mt-10">
-              <div className="text-center py-20 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-sm shadow-2xl">
-                <h2 className="text-2xl font-bold mb-4 bg-gradient-to-br from-white to-white/50 bg-clip-text text-transparent">{steps[currentStep - 1]}</h2>
-                <p className="text-sm text-muted-foreground/80 max-w-md mx-auto px-4">This capability will be built out entirely in the next phase of development.</p>
+          {/* STEP 4 — Video Style */}
+          {currentStep === 4 && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="px-4 py-3 bg-white/5 rounded-xl mb-6 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-purple-400 mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="text-xl font-semibold">Video Style</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Select the visual aesthetic for your video assets.
+                  </p>
+                </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-3 
+                [&::-webkit-scrollbar]:w-1.5 
+                [&::-webkit-scrollbar-track]:bg-transparent 
+                [&::-webkit-scrollbar-thumb]:bg-white/10 
+                [&::-webkit-scrollbar-thumb]:rounded-full 
+                hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
+                {VIDEO_STYLES.map((style) => {
+                  const isSelected = formData.videoStyle?.id === style.id;
+                  return (
+                    <div
+                      key={style.id}
+                      onClick={() => updateFormData({ videoStyle: style })}
+                      className={`relative group rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 aspect-[21/9]
+                        ${isSelected
+                          ? "border-purple-500 shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                          : "border-white/10 hover:border-white/30"
+                        }`}
+                    >
+                      <img
+                        src={`/${style.image}`}
+                        alt={style.title}
+                        className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 
+                          ${isSelected ? "opacity-100" : "opacity-80 group-hover:opacity-100"}`}
+                      />
+
+                      {/* Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                      {/* Title */}
+                      <div className="absolute bottom-0 left-0 right-0 p-4">
+                        <div className="flex justify-between items-center">
+                          <span className={`font-semibold text-lg ${isSelected ? "text-white" : "text-white/90"}`}>
+                            {style.title}
+                          </span>
+                          {isSelected && (
+                            <div className="bg-purple-500 rounded-full p-1 shadow-lg">
+                              <Check className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <StepFooter />
+            </div>
+          )}
+
+          {/* STEP 5 — Caption Style */}
+          {currentStep === 5 && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="px-4 py-3 bg-white/5 rounded-xl mb-6 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-purple-400 mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="text-xl font-semibold">Caption Style</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Select the visual style and animation for your video captions.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 max-h-[calc(100vh-380px)] overflow-y-auto pr-3
+                [&::-webkit-scrollbar]:w-1.5 
+                [&::-webkit-scrollbar-track]:bg-transparent 
+                [&::-webkit-scrollbar-thumb]:bg-white/10 
+                [&::-webkit-scrollbar-thumb]:rounded-full 
+                hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
+                {CAPTION_STYLES.map((style) => {
+                  const isSelected = formData.captionStyle?.id === style.id;
+                  return (
+                    <div
+                      key={style.id}
+                      onClick={() => updateFormData({ captionStyle: style })}
+                      className={`relative group rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-300 flex flex-col
+                        ${isSelected
+                          ? "border-purple-500 bg-purple-500/5 shadow-[0_0_20px_rgba(168,85,247,0.1)]"
+                          : "border-white/10 hover:border-white/25 bg-white/5"
+                        }`}
+                    >
+                      {/* Preview Area */}
+                      <div className="h-28 w-full p-2">
+                        <CaptionPreview 
+                          styleId={style.id} 
+                          text={style.name} 
+                          className={isSelected ? "bg-black/60" : "bg-black/20"}
+                        />
+                      </div>
+                      
+                      {/* Info Area */}
+                      <div className="p-3 border-t border-white/5">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className={`font-semibold text-sm ${isSelected ? "text-purple-300" : "text-white"}`}>
+                            {style.name}
+                          </span>
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 text-purple-400" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-tight">
+                          {style.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <StepFooter />
+            </div>
+          )}
+
+          {/* STEP 6 — Series Details */}
+          {currentStep === 6 && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <div className="px-4 py-3 bg-white/5 rounded-xl mb-6 flex items-start gap-3">
+                <Layout className="w-5 h-5 text-purple-400 mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="text-xl font-semibold">Series Details</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Configure the final metadata and schedule your series.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-6 max-h-[calc(100vh-380px)] overflow-y-auto pr-3
+                [&::-webkit-scrollbar]:w-1.5 
+                [&::-webkit-scrollbar-track]:bg-transparent 
+                [&::-webkit-scrollbar-thumb]:bg-white/10 
+                [&::-webkit-scrollbar-thumb]:rounded-full 
+                hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
+                
+                {/* Series Name */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-white/80">Series Name</label>
+                  <Input 
+                    placeholder="e.g. Daily Motivation, Scary Facts..." 
+                    value={formData.seriesName}
+                    onChange={(e) => updateFormData({ seriesName: e.target.value })}
+                    className="bg-white/5 border-white/10 h-11 focus:border-purple-500 transition-all rounded-xl"
+                  />
+                </div>
+
+                {/* Duration & Time Row */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-white/80">Video Duration</label>
+                    <Select 
+                      value={formData.duration} 
+                      onValueChange={(val) => updateFormData({ duration: val })}
+                    >
+                      <SelectTrigger className="bg-white/5 border-white/10 h-11 rounded-xl">
+                        <SelectValue placeholder="Select duration" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1a20] border-white/10 text-white">
+                        {DURATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value} className="focus:bg-purple-500/20 focus:text-purple-300 cursor-pointer">
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-white/80">Publish Time</label>
+                    <div className="flex items-center gap-3">
+                      <div className="relative flex-1">
+                        <Input 
+                          type="time"
+                          value={formData.publishTime}
+                          onChange={(e) => updateFormData({ publishTime: e.target.value })}
+                          className="bg-white/5 border-white/10 h-11 focus:border-purple-500 transition-all rounded-xl pl-10 [color-scheme:dark]"
+                        />
+                        <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      </div>
+                      
+                      <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl h-11 shrink-0">
+                        {["AM", "PM"].map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => updateFormData({ publishPeriod: p })}
+                            className={`px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer
+                              ${formData.publishPeriod === p 
+                                ? "bg-purple-500 text-white shadow-lg" 
+                                : "text-muted-foreground hover:text-white"}`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Platform Selection */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="text-sm font-medium text-white/80">Target Platforms</label>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                      Multi-select enabled
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {PLATFORMS.map((p) => {
+                      const isSelected = formData.platforms.includes(p.id);
+                      const Icon = { Youtube, Instagram, Twitter, Mail }[p.icon] as any;
+                      
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            const newPlatforms = isSelected
+                              ? formData.platforms.filter((id) => id !== p.id)
+                              : [...formData.platforms, p.id];
+                            updateFormData({ platforms: newPlatforms });
+                          }}
+                          className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col items-center gap-2
+                            ${isSelected
+                              ? "border-purple-500 bg-purple-500/10 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.1)]"
+                              : "border-white/10 bg-white/5 hover:border-white/25 text-muted-foreground hover:text-white"
+                            }`}
+                        >
+                          <Icon className={`w-5 h-5 ${isSelected ? "text-purple-400" : ""}`} />
+                          <span className="text-xs font-medium">{p.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Note */}
+                <div className="p-4 bg-blue-500/5 border border-blue-500/10 rounded-xl flex items-start gap-3">
+                  <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                  <p className="text-[11px] text-blue-300/80 leading-relaxed italic">
+                    Note: The AI video will be generated 3-6 hours before your scheduled publish time to ensure high-quality processing and quality checks.
+                  </p>
+                </div>
+              </div>
+
               <StepFooter />
             </div>
           )}

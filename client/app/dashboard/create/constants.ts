@@ -100,3 +100,49 @@ export const BG_MUSIC_TRACKS: BgMusicTrack[] = [
     url: "https://ik.imagekit.io/Tubeguruji/BgMusic/instagram-reels-marketing-music-469052.mp3",
   },
 ];
+// ─── Video Styles ────────────────────────────────────────────────────────────
+
+export interface VideoStyle {
+  id: string;
+  title: string;
+  /** Path relative to /public — e.g. "video-style/Cyberpunk.png" */
+  image: string;
+}
+
+export const VIDEO_STYLES: VideoStyle[] = [
+  { id: "ghibli", title: "Ghibli", image: "video-style/Ghibli.png" },
+  { id: "realistic", title: "Realistic", image: "video-style/Realistic.png" },
+  { id: "magical", title: "Magical", image: "video-style/Magical.png" },
+  { id: "gaming", title: "Gaming", image: "video-style/Gaming.png" },
+  { id: "cyberpunk", title: "Cyberpunk", image: "video-style/Cyberpunk.png" },
+];
+// ─── Caption Styles ─────────────────────────────────────────────────────────
+
+export interface CaptionStyle {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export const CAPTION_STYLES: CaptionStyle[] = [
+  { id: "karaoke",   name: "Karaoke",   description: "Dynamic word-by-word highlights" },
+  { id: "typewriter",name: "Typewriter",description: "Classic retro typing effect" },
+  { id: "pop",       name: "Pop In",    description: "Words pop with smooth scaling" },
+  { id: "slide",     name: "Slide Up",  description: "Words slide up into position" },
+  { id: "glow",      name: "Pulse Glow",description: "Luminescent breathing effect" },
+  { id: "shake",     name: "Impact",    description: "High-energy jitter effect" },
+];
+
+// ─── Step 6: Series Details ───────────────────────────────────────────────────
+
+export const DURATION_OPTIONS = [ 
+  { label: "30-50 Second Video", value: "30-50" },
+  { label: "60-70 Second Video", value: "60-70" },
+];
+
+export const PLATFORMS = [
+  { id: "youtube",   name: "YouTube",   icon: "Youtube"   },
+  { id: "instagram", name: "Instagram", icon: "Instagram" },
+  { id: "x",         name: "X",         icon: "Twitter"   },
+  { id: "email",     name: "Email",     icon: "Mail"      },
+];
