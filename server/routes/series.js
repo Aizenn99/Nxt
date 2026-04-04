@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const { createSeries } = require("../controllers/seriesController");
+const { createSeries, getSeriesById, updateSeries } = require("../controllers/seriesController");
 
 /**
  * @desc    Save a new video series
@@ -9,5 +9,19 @@ const { createSeries } = require("../controllers/seriesController");
  * @access  Private
  */
 router.post("/create", authMiddleware, createSeries);
+
+/**
+ * @desc    Get a single series by ID
+ * @route   GET /api/series/:id
+ * @access  Private
+ */
+router.get("/:id", authMiddleware, getSeriesById);
+
+/**
+ * @desc    Update an existing series
+ * @route   PUT /api/series/update/:id
+ * @access  Private
+ */
+router.put("/update/:id", authMiddleware, updateSeries);
 
 module.exports = router;

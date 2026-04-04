@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Sparkles,
   Ghost,
@@ -102,12 +102,73 @@ const availableNiches = [
 ];
 
 
-export default function CreateVideo() {
+function CreateVideoForm() {
   const user = useSelector((state: any) => state.auth.user);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams.get("id");
+
   const [currentStep, setCurrentStep] = useState(1);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const [formData, setFormData] = useState({
+    niche: null as string | null,
+    customNiche: "",
+    isCustom: false,
+    languageObj: null as LanguageOption | null,
+    voiceObj: null as VoiceModel | null,
+    bgMusic: [] as BgMusicTrack[],
+    videoStyle: null as VideoStyle | null,
+    captionStyle: null as CaptionStyle | null,
+    seriesName: "",
+    duration: "",
+    platforms: [] as string[],
+    publishTime: "",
+    publishPeriod: "AM",
+  });
+
+  // Fetch series for editing
+  useEffect(() => {
+    const fetchSeries = async () => {
+      if (!editId || !user?.id) return;
+      
+      try {
+        setLoading(true);
+        const response = await axios.get(`${API_URL}/api/series/${editId}`, {
+          withCredentials: true
+        });
+        
+        if (response.data.success) {
+          const data = response.data.data;
+          setFormData({
+            niche: data.niche,
+            customNiche: data.custom_niche || "",
+            isCustom: data.is_custom || false,
+            languageObj: data.language_obj,
+            voiceObj: data.voice_obj,
+            bgMusic: data.bg_music || [],
+            videoStyle: data.video_style,
+            captionStyle: data.caption_style,
+            seriesName: data.series_name,
+            duration: data.duration,
+            platforms: data.platforms || [],
+            publishTime: data.publish_time,
+            publishPeriod: data.publish_period,
+          });
+          toast.success("Series loaded for editing");
+        }
+      } catch (err: any) {
+        toast.error("Failed to load series details");
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSeries();
+  }, [editId, user]);
 
   React.useEffect(() => {
     return () => {
@@ -116,36 +177,6 @@ export default function CreateVideo() {
       }
     };
   }, []);
-
-  const [formData, setFormData] = useState<{
-    niche: string | null;
-    customNiche: string;
-    isCustom: boolean;
-    languageObj: LanguageOption | null;
-    voiceObj: VoiceModel | null;
-    bgMusic: BgMusicTrack[];
-    videoStyle: VideoStyle | null;
-    captionStyle: CaptionStyle | null;
-    seriesName: string;
-    duration: string;
-    platforms: string[];
-    publishTime: string;
-    publishPeriod: "AM" | "PM";
-  }>({
-    niche: null,
-    customNiche: "",
-    isCustom: false,
-    languageObj: null,
-    voiceObj: null,
-    bgMusic: [],
-    videoStyle: null,
-    captionStyle: null,
-    seriesName: "",
-    duration: "",
-    platforms: [],
-    publishTime: "",
-    publishPeriod: "AM",
-  });
 
   const toggleBgMusic = (track: BgMusicTrack) => {
     setFormData((prev) => {
@@ -219,31 +250,36 @@ export default function CreateVideo() {
     }
 
     try {
-      const response = await axios.post(
-        `${API_URL}/api/series/create`,
-        {
-          ...formData, // This includes niche, customNiche, isCustom, languageObj, etc.
+      setLoading(true);
+      const url = editId 
+        ? `${API_URL}/api/series/update/${editId}` 
+        : `${API_URL}/api/series/create`;
+      
+      const method = editId ? "put" : "post";
+
+      const response = await axios({
+        method,
+        url,
+        data: formData,
+        withCredentials: true,
+        headers: {
+          "Content-Type": "application/json",
         },
-        {
-          withCredentials: true,
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      });
 
       if (response.data.success) {
-        toast.success("Series scheduled and data saved via API!");
-        console.log("API Response:", response.data);
+        toast.success(editId ? "Series updated successfully!" : "Series scheduled successfully!");
         setTimeout(() => {
           router.push("/dashboard");
-        }, 1500); // 1.5s delay to allow toast to be visible
+        }, 1500);
       } else {
-        throw new Error(response.data.message || "Failed to schedule series");
+        throw new Error(response.data.message || "Failed to save series");
       }
     } catch (err: any) {
       console.error("API Save Error:", err.response?.data?.message || err.message);
       toast.error("Failed to save series data: " + (err.response?.data?.message || err.message));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -251,13 +287,12 @@ export default function CreateVideo() {
     <div className="mt-8 flex justify-between items-center gap-4 border-t border-white/10 pt-6">
       <Button
         variant="outline"
-        disabled={currentStep === 1}
+        disabled={currentStep === 1 || loading}
         onClick={() => setCurrentStep((s) => s - 1)}
         className="rounded-xl cursor-pointer"
       >
         Back
       </Button>
-
       <Button
         onClick={() => {
           if (currentStep < 6) {
@@ -266,10 +301,10 @@ export default function CreateVideo() {
             handleSchedule();
           }
         }}
-        disabled={!isValidStep()}
-        className="rounded-xl cursor-pointer flex items-center gap-2"
+        disabled={!isValidStep() || loading}
+        className="rounded-xl bg-purple-600 hover:bg-purple-500 text-white px-8 cursor-pointer flex items-center gap-2"
       >
-        {currentStep === 6 ? "Schedule Series" : "Continue"}
+        {loading ? "Saving..." : currentStep === 6 ? (editId ? "Update Series" : "Schedule Series") : "Continue"}
         {currentStep === 6 ? <Clock className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
       </Button>
     </div>
@@ -876,5 +911,16 @@ export default function CreateVideo() {
         </SidebarInset>
       </div>
     </SidebarProvider>
+  );
+}
+export default function CreateVideo() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen items-center justify-center bg-[#050505] text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    }>
+      <CreateVideoForm />
+    </Suspense>
   );
 }

@@ -72,4 +72,87 @@ const createSeries = async (req, res) => {
   }
 };
 
-module.exports = { createSeries };
+/**
+ * @desc    Fetch a single series by ID
+ * @route   GET /api/series/:id
+ * @access  Private
+ */
+const getSeriesById = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  try {
+    const { data, error } = await supabase
+      .from("video_series")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+
+    if (error) {
+      return res.status(404).json({ message: "Series not found" });
+    }
+
+    res.status(200).json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+/**
+ * @desc    Update an existing video series
+ * @route   PUT /api/series/update/:id
+ * @access  Private
+ */
+const updateSeries = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+  const updateData = req.body;
+
+  // Remove fields that should not be updated manually
+  delete updateData.id;
+  delete updateData.user_id;
+  delete updateData.created_at;
+
+  try {
+    const { data, error } = await supabase
+      .from("video_series")
+      .update({
+        niche: updateData.niche,
+        custom_niche: updateData.customNiche,
+        is_custom: updateData.isCustom,
+        language_obj: updateData.languageObj,
+        voice_obj: updateData.voiceObj,
+        bg_music: updateData.bgMusic,
+        video_style: updateData.videoStyle,
+        caption_style: updateData.captionStyle,
+        series_name: updateData.seriesName,
+        duration: updateData.duration,
+        platforms: updateData.platforms,
+        publish_time: updateData.publishTime,
+        publish_period: updateData.publishPeriod,
+        status: updateData.status || "scheduled",
+      })
+      .eq("id", id)
+      .eq("user_id", userId)
+      .select();
+
+    if (error) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    if (data.length === 0) {
+      return res.status(404).json({ message: "Series not found or unauthorized" });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: data[0],
+      message: "Series updated successfully",
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+module.exports = { createSeries, getSeriesById, updateSeries };

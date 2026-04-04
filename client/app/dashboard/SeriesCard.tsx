@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import {
   MoreHorizontal,
   Pencil,
@@ -48,6 +49,7 @@ interface SeriesCardProps {
 }
 
 export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
+  const router = useRouter();
   const isPaused = series.status === "paused";
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
@@ -119,9 +121,9 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
         </div>
 
         {/* Edit Icon Overlay */}
-        <button
+        <button 
           className="absolute top-3 right-3 p-2 rounded-full bg-black/40 hover:bg-purple-500 text-white backdrop-blur-md transition-all opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 cursor-pointer"
-          onClick={() => toast.info("Editing series...")}
+          onClick={() => router.push(`/dashboard/create?id=${series.id}`)}
         >
           <Pencil className="w-4 h-4" />
         </button>
@@ -154,7 +156,10 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="bg-[#1a1a20] border-white/10 text-white w-40">
-              <DropdownMenuItem className="cursor-pointer focus:bg-purple-500/10 focus:text-purple-300" onClick={() => toast.info("Editing series...")}>
+              <DropdownMenuItem 
+                className="cursor-pointer focus:bg-purple-500/10 focus:text-purple-300" 
+                onClick={() => router.push(`/dashboard/create?id=${series.id}`)}
+              >
                 <Pencil className="w-3.5 h-3.5 mr-2" />
                 Edit
               </DropdownMenuItem>
