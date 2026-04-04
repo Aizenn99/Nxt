@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Sparkles,
   Ghost,
@@ -51,6 +52,10 @@ import type { LanguageOption, VoiceModel, BgMusicTrack, VideoStyle, CaptionStyle
 import { CaptionPreview } from "./CaptionPreview";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import axios from "axios";
+import { toast } from "sonner";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 const steps = [
   "Niche Selection",
@@ -141,7 +146,8 @@ function VideoSidebar() {
 }
 
 export default function CreateVideo() {
-  const { user } = useSelector((state: any) => state.auth);
+  const user = useSelector((state: any) => state.auth.user);
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
@@ -249,6 +255,41 @@ export default function CreateVideo() {
     return true;
   };
 
+  const handleSchedule = async () => {
+    if (!user?.id) {
+      toast.error("User not found. Please log in again.");
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/series/create`,
+        {
+          ...formData, // This includes niche, customNiche, isCustom, languageObj, etc.
+        },
+        {
+          withCredentials: true,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.data.success) {
+        toast.success("Series scheduled and data saved via API!");
+        console.log("API Response:", response.data);
+        setTimeout(() => {
+          router.push("/dashboard/create");
+        }, 1500); // 1.5s delay to allow toast to be visible
+      } else {
+        throw new Error(response.data.message || "Failed to schedule series");
+      }
+    } catch (err: any) {
+      console.error("API Save Error:", err.response?.data?.message || err.message);
+      toast.error("Failed to save series data: " + (err.response?.data?.message || err.message));
+    }
+  };
+
   const StepFooter = () => (
     <div className="mt-8 flex justify-between items-center gap-4 border-t border-white/10 pt-6">
       <Button
@@ -265,8 +306,7 @@ export default function CreateVideo() {
           if (currentStep < 6) {
             setCurrentStep((s) => s + 1);
           } else {
-            alert("Series Scheduled Successfully!");
-            console.log("Final Series Data:", formData);
+            handleSchedule();
           }
         }}
         disabled={!isValidStep()}
@@ -712,13 +752,13 @@ export default function CreateVideo() {
                     >
                       {/* Preview Area */}
                       <div className="h-28 w-full p-2">
-                        <CaptionPreview 
-                          styleId={style.id} 
-                          text={style.name} 
+                        <CaptionPreview
+                          styleId={style.id}
+                          text={style.name}
                           className={isSelected ? "bg-black/60" : "bg-black/20"}
                         />
                       </div>
-                      
+
                       {/* Info Area */}
                       <div className="p-3 border-t border-white/5">
                         <div className="flex justify-between items-center mb-1">
@@ -761,12 +801,12 @@ export default function CreateVideo() {
                 [&::-webkit-scrollbar-thumb]:bg-white/10 
                 [&::-webkit-scrollbar-thumb]:rounded-full 
                 hover:[&::-webkit-scrollbar-thumb]:bg-white/20">
-                
+
                 {/* Series Name */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-white/80">Series Name</label>
-                  <Input 
-                    placeholder="e.g. Daily Motivation, Scary Facts..." 
+                  <Input
+                    placeholder="e.g. Daily Motivation, Scary Facts..."
                     value={formData.seriesName}
                     onChange={(e) => updateFormData({ seriesName: e.target.value })}
                     className="bg-white/5 border-white/10 h-11 focus:border-purple-500 transition-all rounded-xl"
@@ -777,8 +817,8 @@ export default function CreateVideo() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-white/80">Video Duration</label>
-                    <Select 
-                      value={formData.duration} 
+                    <Select
+                      value={formData.duration}
                       onValueChange={(val) => updateFormData({ duration: val })}
                     >
                       <SelectTrigger className="bg-white/5 border-white/10 h-11 rounded-xl">
@@ -798,7 +838,7 @@ export default function CreateVideo() {
                     <label className="text-sm font-medium text-white/80">Publish Time</label>
                     <div className="flex items-center gap-3">
                       <div className="relative flex-1">
-                        <Input 
+                        <Input
                           type="time"
                           value={formData.publishTime}
                           onChange={(e) => updateFormData({ publishTime: e.target.value })}
@@ -806,15 +846,15 @@ export default function CreateVideo() {
                         />
                         <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       </div>
-                      
+
                       <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl h-11 shrink-0">
                         {["AM", "PM"].map((p) => (
                           <button
                             key={p}
                             onClick={() => updateFormData({ publishPeriod: p })}
                             className={`px-4 rounded-lg text-xs font-semibold transition-all cursor-pointer
-                              ${formData.publishPeriod === p 
-                                ? "bg-purple-500 text-white shadow-lg" 
+                              ${formData.publishPeriod === p
+                                ? "bg-purple-500 text-white shadow-lg"
                                 : "text-muted-foreground hover:text-white"}`}
                           >
                             {p}
@@ -837,7 +877,7 @@ export default function CreateVideo() {
                     {PLATFORMS.map((p) => {
                       const isSelected = formData.platforms.includes(p.id);
                       const Icon = { Youtube, Instagram, Twitter, Mail }[p.icon] as any;
-                      
+
                       return (
                         <div
                           key={p.id}
