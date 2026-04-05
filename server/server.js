@@ -40,6 +40,7 @@ app.use("/api", require("./routes/imageroutes"));
 app.use("/api", require("./routes/pdfRoutes"));
 app.use("/api/agent", require("./routes/agentroute"));
 app.use("/api/series", require("./routes/series"));
+app.use("/api/inngest", require("./routes/inngest"));
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

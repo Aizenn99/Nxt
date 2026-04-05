@@ -19,7 +19,7 @@ const creditUserSchema = new mongoose.Schema(
     },
     credits: {
       type: Number,
-      default: 100,
+      default: 1500,
       min: 0,
     },
     lastCreditReset: {

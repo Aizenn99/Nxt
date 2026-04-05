@@ -1,4 +1,5 @@
 const { supabase } = require("../config/supabase");
+const { inngest } = require("../inngest/client");
 
 /**
  * @desc    Save a new video series to Supabase
@@ -155,4 +156,51 @@ const updateSeries = async (req, res) => {
   }
 };
 
-module.exports = { createSeries, getSeriesById, updateSeries };
+/**
+ * @desc    Trigger video generation for a series
+ * @route   POST /api/series/generate
+ * @access  Private
+ */
+const generateSeries = async (req, res) => {
+  const { seriesId } = req.body;
+  const userId = req.userId;
+
+  if (!seriesId) {
+    return res.status(400).json({ message: "Series ID is required" });
+  }
+
+  try {
+    // Verify ownership
+    const { data: series, error: fetchError } = await supabase
+      .from("video_series")
+      .select("id")
+      .eq("id", seriesId)
+      .eq("user_id", userId)
+      .single();
+
+    if (fetchError || !series) {
+      return res.status(404).json({ message: "Series not found or unauthorized" });
+    }
+
+    console.log("🚀 Triggering Inngest event for series:", seriesId);
+
+    // Trigger Inngest event
+    const result = await inngest.send({
+      name: "video/generate",
+      data: { seriesId },
+    });
+
+    console.log("✅ Inngest send result:", result);
+
+    res.status(200).json({
+      success: true,
+      message: "Video generation triggered successfully",
+    });
+  } catch (err) {
+    console.error("Generation Trigger Error:", err.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+
+module.exports = { createSeries, getSeriesById, updateSeries, generateSeries };

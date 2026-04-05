@@ -12,9 +12,11 @@ import {
   Sparkles,
   Calendar,
   Clock,
-  Layout
+  Layout,
+  History
 } from "lucide-react";
 import { format } from "date-fns";
+import { useSelector } from "react-redux";
 import {
   Card,
   CardContent,
@@ -49,6 +51,7 @@ interface SeriesCardProps {
 }
 
 export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
+  const user = useSelector((state: any) => state.auth.user);
   const router = useRouter();
   const isPaused = series.status === "paused";
 
@@ -88,10 +91,33 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
     }
   };
 
-  const triggerGeneration = () => {
-    toast.info("Manual generation triggered! Your video will be ready shortly.", {
-      icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-    });
+  const triggerGeneration = async () => {
+    try {
+      if (!user) {
+        toast.error("You must be logged in to trigger generation");
+        return;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/series/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ seriesId: series.id }),
+        credentials: "include" // This ensures the 'token' cookie is sent
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to trigger generation");
+      }
+
+      toast.success("Manual generation triggered! Your video will be ready shortly.", {
+        icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+      });
+    } catch (err: any) {
+      toast.error("Failed to trigger generation: " + err.message);
+    }
   };
 
   // Extract thumbnail from video_style
@@ -120,7 +146,6 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
           </Badge>
         </div>
 
-        {/* Edit Icon Overlay */}
         <button 
           className="absolute top-3 right-3 p-2 rounded-full bg-black/40 hover:bg-purple-500 text-white backdrop-blur-md transition-all opacity-0 group-hover:opacity-100 transform translate-y-2 group-hover:translate-y-0 cursor-pointer"
           onClick={() => router.push(`/dashboard/create?id=${series.id}`)}
@@ -179,7 +204,7 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
           </DropdownMenu>
         </div>
 
-        {/* Delete Confirmation Dialog */}
+   
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
           <AlertDialogContent className="bg-[#1a1a20] border-white/10 rounded-2xl  text-white">
             <AlertDialogHeader>
@@ -212,7 +237,7 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
             className="flex-1 text-[11px] h-9 border-white/10 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer gap-2"
             onClick={() => toast.info("Redirecting to video history...")}
           >
-            <History className="w-3.5 h-3.5" />
+            <ClockHistory className="w-3.5 h-3.5" />
             View History
           </Button>
           <Button
@@ -229,7 +254,7 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
   );
 }
 
-function History(props: any) {
+function ClockHistory(props: any) {
   return (
     <svg
       {...props}
