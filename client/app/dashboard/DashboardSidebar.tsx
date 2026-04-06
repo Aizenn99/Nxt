@@ -33,8 +33,8 @@ export function DashboardSidebar() {
     {
       label: "Text To Video",
       icon: Sparkles,
-      href: "/dashboard/create",
-      isActive: pathname === "/dashboard/create"
+      href: "/dashboard/text-to-video",
+      isActive: pathname === "/dashboard/text-to-video"
     },
     {
       label: "My Series",
@@ -102,22 +102,6 @@ export function DashboardSidebar() {
 
       </SidebarContent>
 
-      <div className=" p-6 border-t border-white/10">
-        <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition-all cursor-pointer group">
-          <Avatar className="h-9 w-9 border border-white/10 group-hover:border-purple-500/30 transition-all">
-            <AvatarImage src={user?.avatar} />
-            <AvatarFallback className="bg-purple-500/20 text-purple-400 text-xs font-bold">
-              {user?.name?.substring(0, 2).toUpperCase() || "AI"}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col min-w-0">
-            <span className="text-sm font-semibold text-white truncate group-hover:text-purple-300 transition-all">
-              {user?.name || "User"}
-            </span>
-            <span className="text-[10px] text-muted-foreground truncate">{user?.email}</span>
-          </div>
-        </div>
-      </div>
     </Sidebar>
   );
 }

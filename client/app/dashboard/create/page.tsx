@@ -33,19 +33,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
   SidebarInset,
-  SidebarTrigger,
-  SidebarHeader,
+  SidebarProvider,
 } from "@/components/ui/sidebar";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import Link from "next/link";
 import { useSelector } from "react-redux";
 import { LANGUAGE_OPTIONS, VOICE_MODELS, BG_MUSIC_TRACKS, VIDEO_STYLES, CAPTION_STYLES, DURATION_OPTIONS, PLATFORMS } from "./constants";
 import type { LanguageOption, VoiceModel, BgMusicTrack, VideoStyle, CaptionStyle } from "./constants";
@@ -55,7 +46,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import axios from "axios";
 import { toast } from "sonner";
 import { DashboardSidebar } from "../DashboardSidebar";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { DashboardNavbar } from "@/components/DashboardNavbar";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -315,29 +306,10 @@ function CreateVideoForm() {
       <div className="flex bg-[#050505] min-h-screen w-full font-sans text-white overflow-hidden">
         <DashboardSidebar />
         <SidebarInset className="flex-1 bg-transparent">
-        {/* Navbar */}
-        <header className="flex justify-between items-center px-6 py-4 border-b border-white/10">
-          <div className="flex items-center gap-4">
-            <SidebarTrigger />
-            <Link href="/" className="text-xl bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent font-semibold">
-              NxtAi
-            </Link>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center  gap-2 text-sm text-muted-foreground">
-              <Play className="w-4 h-4 text-purple-400" />
-              Video Creation
-            </div>
-
-            <Avatar className="w-9 h-9">
-              <AvatarImage src="" />
-              <AvatarFallback>
-                {user?.name ? user.name[0] : <UserCircle />}
-              </AvatarFallback>
-            </Avatar>
-          </div>
-        </header>
+          <DashboardNavbar 
+            title={editId ? "Edit Series" : "Create New Series"} 
+            backButtonHref="/dashboard" 
+          />
 
         <main className="w-[800px] mx-auto px-4 py-10">
           {/* STEP HEADER */}

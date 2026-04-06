@@ -21,14 +21,13 @@ import { useSelector } from "react-redux";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { DashboardSidebar } from "../DashboardSidebar";
+import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   SidebarInset,
-  SidebarTrigger,
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { toast } from "sonner";
@@ -102,43 +101,15 @@ export default function VideosPage() {
         <DashboardSidebar />
         
         <SidebarInset className="flex flex-col flex-1 bg-transparent">
-          {/* Header */}
-          <header className="flex h-16 items-center justify-between px-8 border-b border-white/5 bg-[#0a0a0c]/50 backdrop-blur-md sticky top-0 z-10">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger className="text-white/60 hover:text-white cursor-pointer" />
-              <div className="flex items-center gap-2">
-                <Button 
-                   variant="ghost" 
-                   size="icon" 
-                   className="h-8 w-8 rounded-lg hover:bg-white/5 mr-2"
-                   onClick={() => router.push("/dashboard")}
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <h2 className="text-xl font-bold">Generated Videos</h2>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="relative w-64 hidden md:block">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search videos..." 
-                  className="bg-white/5 border-white/10 h-9 pl-9 rounded-xl focus:border-purple-500 transition-all text-sm"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <Button 
-                variant="outline" 
-                size="icon" 
-                className="h-9 w-9 rounded-xl border-white/10 bg-white/5 hover:bg-white/10 cursor-pointer"
-                onClick={() => fetchVideos()}
-              >
-                <RefreshCw className={`w-4 h-4 text-muted-foreground transition-all ${loading ? "animate-spin" : ""}`} />
-              </Button>
-            </div>
-          </header>
+          <DashboardNavbar 
+             title="Generated Videos" 
+             showSearch 
+             searchQuery={searchQuery}
+             setSearchQuery={setSearchQuery}
+             onRefresh={fetchVideos}
+             loading={loading}
+             backButtonHref="/dashboard"
+          />
 
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -191,18 +162,26 @@ export default function VideosPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {filteredVideos.map((v) => {
                     const isGeneratingVideo = v.status === 'generating';
+                    const isFailedVideo = v.status === 'failed';
                     // Extract first scene image
                     const firstScene = v.scenes && Array.isArray(v.scenes) ? v.scenes[0] : null;
                     const thumbnailUrl = firstScene?.imageUrl || "/placeholder-video.png";
 
                     return (
-                      <Card key={v.id} className={`group overflow-hidden bg-white/5 border-white/10 transition-all duration-300 ${isGeneratingVideo ? 'border-purple-500/30 ring-1 ring-purple-500/10' : 'hover:border-purple-500/50'}`}>
+                      <Card key={v.id} className={`group overflow-hidden bg-white/5 border-white/10 transition-all duration-300 ${isGeneratingVideo ? 'border-purple-500/30 ring-1 ring-purple-500/10' : isFailedVideo ? 'border-red-500/30' : 'hover:border-purple-500/50'}`}>
                         <div className="relative aspect-video overflow-hidden bg-white/5">
                           {isGeneratingVideo ? (
                             <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-purple-500/5 backdrop-blur-sm">
                               <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
                               <span className="text-[10px] font-bold text-purple-400 uppercase tracking-widest animate-pulse">
                                 Generating...
+                              </span>
+                            </div>
+                          ) : isFailedVideo ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-red-500/5 backdrop-blur-sm">
+                              <Sparkles className="w-8 h-8 text-red-400/40" />
+                              <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">
+                                Generation Failed
                               </span>
                             </div>
                           ) : (
@@ -224,7 +203,7 @@ export default function VideosPage() {
                           )}
 
                           <div className="absolute bottom-3 left-3 right-3">
-                            <Badge className={`backdrop-blur-md border-white/10 text-[10px] py-0 px-2 h-5 mb-1 ${isGeneratingVideo ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-black/50'}`}>
+                            <Badge className={`backdrop-blur-md border-white/10 text-[10px] py-0 px-2 h-5 mb-1 ${isGeneratingVideo ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : isFailedVideo ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-black/50'}`}>
                               {v.status || "completed"}
                             </Badge>
                             <h4 className="text-sm font-bold text-white truncate shadow-sm">
@@ -240,6 +219,11 @@ export default function VideosPage() {
                                 <>
                                   <Clock className="w-3 h-3 text-purple-400 animate-pulse" />
                                   <span className="text-purple-300">Started just now</span>
+                                </>
+                              ) : isFailedVideo ? (
+                                <>
+                                  <Clock className="w-3 h-3 text-red-400" />
+                                  <span className="text-red-300">Failed</span>
                                 </>
                               ) : (
                                 <>
@@ -258,27 +242,14 @@ export default function VideosPage() {
                               <div className="w-full py-2 text-center text-[10px] text-muted-foreground italic">
                                 Finalizing assets...
                               </div>
+                            ) : isFailedVideo ? (
+                              <div className="w-full py-2 text-center text-[10px] text-red-400 italic">
+                                Something went wrong
+                              </div>
                             ) : (
-                              <>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="flex-1 h-8 text-[10px] gap-2 hover:bg-purple-500/10 hover:text-purple-400 rounded-lg cursor-pointer"
-                                  onClick={() => v.audio_url && window.open(v.audio_url, '_blank')}
-                                >
-                                  <Music className="w-3 h-3" />
-                                  Audio
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="flex-1 h-8 text-[10px] gap-2 hover:bg-purple-500/10 hover:text-purple-400 rounded-lg cursor-pointer"
-                                  onClick={() => v.captions_url && window.open(v.captions_url, '_blank')}
-                                >
-                                  <FileText className="w-3 h-3" />
-                                  VTT
-                                </Button>
-                              </>
+                              <div className="w-full py-2 text-center text-[10px] text-muted-foreground italic">
+                                Ready to produce
+                              </div>
                             )}
                           </div>
                         </CardContent>

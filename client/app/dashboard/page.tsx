@@ -16,22 +16,14 @@ import {
 import { useSelector } from "react-redux";
 import { supabase } from "@/lib/supabase";
 import { SeriesCard } from "./SeriesCard";
+import { SeriesListItem } from "./SeriesListItem";
 import { DashboardSidebar } from "./DashboardSidebar";
+import { DashboardNavbar } from "@/components/DashboardNavbar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
   SidebarInset,
-  SidebarTrigger,
-  SidebarHeader,
   SidebarProvider,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 
@@ -40,6 +32,7 @@ export default function DashboardPage() {
   const [series, setSeries] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewType, setViewType] = useState<"grid" | "list">("grid");
   const router = useRouter();
 
   const fetchSeries = async () => {
@@ -76,33 +69,14 @@ export default function DashboardPage() {
         <DashboardSidebar />
         
         <SidebarInset className="flex flex-col flex-1 bg-transparent">
-          {/* Header */}
-          <header className="flex h-16 items-center justify-between px-8 border-b border-white/5 bg-[#0a0a0c]/50 backdrop-blur-md sticky top-0 z-10">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger className="text-white/60 hover:text-white cursor-pointer" />
-              <h2 className="text-xl font-bold">My Series</h2>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <div className="relative w-64 hidden md:block">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search series..." 
-                  className="bg-white/5 border-white/10 h-9 pl-9 rounded-xl focus:border-purple-500 transition-all text-sm"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <Button 
-                variant="outline" 
-                size="icon" 
-                className="h-9 w-9 rounded-xl border-white/10 bg-white/5 hover:bg-white/10 cursor-pointer"
-                onClick={fetchSeries}
-              >
-                <RefreshCw className={`w-4 h-4 text-muted-foreground transition-all ${loading ? "animate-spin" : ""}`} />
-              </Button>
-            </div>
-          </header>
+          <DashboardNavbar 
+             title="My Series" 
+             showSearch 
+             searchQuery={searchQuery}
+             setSearchQuery={setSearchQuery}
+             onRefresh={fetchSeries}
+             loading={loading}
+          />
 
           {/* Main Content */}
           <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
@@ -116,10 +90,20 @@ export default function DashboardPage() {
                   </h3>
                 </div>
                 <div className="flex items-center gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-purple-600 text-white shadow-md">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={`h-8 w-8 rounded-lg transition-all ${viewType === "grid" ? "bg-purple-600 text-white shadow-md" : "text-muted-foreground hover:text-white"}`}
+                    onClick={() => setViewType("grid")}
+                  >
                     <LayoutGrid className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-white">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={`h-8 w-8 rounded-lg transition-all ${viewType === "list" ? "bg-purple-600 text-white shadow-md" : "text-muted-foreground hover:text-white"}`}
+                    onClick={() => setViewType("list")}
+                  >
                     <ListIcon className="w-4 h-4" />
                   </Button>
                 </div>
@@ -127,20 +111,32 @@ export default function DashboardPage() {
 
               {loading ? (
                 /* Skeleton Loading */
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className={viewType === "grid" 
+                  ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" 
+                  : "flex flex-col gap-4"
+                }>
                   {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div key={i} className="space-y-4">
-                      <Skeleton className="aspect-video w-full rounded-2xl bg-white/5" />
-                      <Skeleton className="h-6 w-3/4 bg-white/5" />
-                      <Skeleton className="h-4 w-1/2 bg-white/5" />
+                    <div key={i} className={viewType === "grid" ? "space-y-4" : "h-20 w-full rounded-2xl bg-white/5"}>
+                      {viewType === "grid" && (
+                        <>
+                          <Skeleton className="aspect-video w-full rounded-2xl bg-white/5" />
+                          <Skeleton className="h-6 w-3/4 bg-white/5" />
+                          <Skeleton className="h-4 w-1/2 bg-white/5" />
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               ) : filteredSeries.length > 0 ? (
-                /* Series Grid */
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                /* Conditional View Rendering */
+                <div className={viewType === "grid" 
+                  ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700" 
+                  : "flex flex-col gap-4 animate-in fade-in slide-in-from-right-4 duration-700"
+                }>
                   {filteredSeries.map((s) => (
-                    <SeriesCard key={s.id} series={s} onUpdate={fetchSeries} />
+                    viewType === "grid" 
+                      ? <SeriesCard key={s.id} series={s} onUpdate={fetchSeries} />
+                      : <SeriesListItem key={s.id} series={s} onUpdate={fetchSeries} />
                   ))}
                 </div>
               ) : (
