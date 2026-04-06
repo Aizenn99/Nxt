@@ -1,13 +1,10 @@
 const { inngest } = require("./client");
 const { supabase } = require("../config/supabase");
-const { GoogleGenerativeAI, SchemaType } = require("@google/generative-ai");
-const { DeepgramClient } = require("@deepgram/sdk");
 const { webvtt } = require("@deepgram/captions");
 const axios = require("axios");
 
-// ─── Clients ──────────────────────────────────────────────────────────────────
-const deepgram = new DeepgramClient(process.env.DEEPGRAM_API_KEY);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API);
+const { CohereClientV2 } = require("cohere-ai");
+const cohere = new CohereClientV2({ token: process.env.COHERE_API });
 
 // ─── Language Maps ────────────────────────────────────────────────────────────
 const DEEPGRAM_TTS_MODEL_MAP = {
@@ -65,49 +62,31 @@ function getSceneCount(duration) {
   return map[duration] ?? 4;
 }
 
-// ─── Gemini Response Schema ───────────────────────────────────────────────────
-function buildResponseSchema(sceneCount) {
-  return {
-    type: SchemaType.OBJECT,
-    properties: {
-      title: {
-        type: SchemaType.STRING,
-        description: "Video title written ONLY in the target language native script",
-      },
-      language: {
-        type: SchemaType.STRING,
-        description: "The target language name e.g. Hindi, Tamil",
-      },
-      fullScript: {
-        type: SchemaType.STRING,
-        description: "Complete narration written ONLY in the target language native script",
-      },
-      scenes: {
-        type: SchemaType.ARRAY,
-        items: {
-          type: SchemaType.OBJECT,
-          properties: {
-            imagePrompt: {
-              type: SchemaType.STRING,
-              description: "MUST be in English only. Detailed cinematic description for AI image generation.",
-            },
-            narrativeText: {
-              type: SchemaType.STRING,
-              description: "MUST be written ONLY in the target language native script. Never English.",
-            },
-          },
-          required: ["imagePrompt", "narrativeText"],
-        },
-        minItems: sceneCount,
-        maxItems: sceneCount,
-      },
-    },
-    required: ["title", "language", "fullScript", "scenes"],
-  };
+// ─── Script Generation ────────────────────────────────────────────────────────
+async function generateScriptForSeries(series) {
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 20000;
+  const COHERE_MODELS = ["command-a-03-2025"];
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const model = attempt === 1 ? COHERE_MODELS[0] : COHERE_MODELS[1];
+      return await _generateScriptForSeries(series, model);
+    } catch (err) {
+      console.error(`❌ Attempt ${attempt} failed:`, err.message);
+      const isRateLimit = err.message?.includes("429") || err.status === 429;
+      if (attempt < MAX_RETRIES) {
+        const delay = isRateLimit ? RETRY_DELAY_MS : 5000;
+        console.warn(`⚠️ Script generation failed. Retrying in ${delay / 1000}s...`);
+        await new Promise(res => setTimeout(res, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
-// ─── Script Generation: Single-step JSON schema generation ────────────────────
-async function generateScriptForSeries(series) {
+async function _generateScriptForSeries(series, modelName = "command-a-03-2025") {
   const { niche, duration, series_name, language_obj, voice_obj } = series;
 
   const sceneCount = getSceneCount(duration);
@@ -126,25 +105,26 @@ async function generateScriptForSeries(series) {
   ][Math.floor(Math.random() * 8)];
   const randomSeed = Math.random().toString(36).substring(2, 8);
 
-  // Consolidated Single Call to save Gemini Quota (Free tier is only 15-20 req/day)
-  const jsonModel = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: {
-      temperature: 1.2,
-      topP: 0.9,
-      maxOutputTokens: 2048,
-      responseMimeType: "application/json",
-      responseSchema: buildResponseSchema(sceneCount),
-    },
-    systemInstruction: `You are an expert ${scriptLanguage} video script writer and storyboard artist.
+  console.log(`🤖 Using Cohere model: ${modelName} for ${scriptLanguage} script`);
+
+  const systemMessage = `You are an expert ${scriptLanguage} video script writer and storyboard artist.
 ${isNonEnglish ? `
 IMPORTANT:
 1. Everything except 'imagePrompt' MUST be in ${scriptLanguage} native script.
 2. Use ONLY ${scriptLanguage}'s primary script (e.g., Devanagari for Hindi/Marathi, Tamil script for Tamil).
 3. 'imagePrompt' MUST ALWAYS be in English only for the image generator.
 ` : "All fields MUST be in clear, engaging English."}
-Ensure the narrative is unique, engaging, and follows the "${randomAngle}" approach.`,
-  });
+Ensure the narrative is unique, engaging, and follows the "${randomAngle}" approach.
+You MUST return the output as a valid JSON object matching this schema:
+{
+  "title": "string",
+  "language": "string",
+  "fullScript": "string",
+  "scenes": [
+    { "imagePrompt": "string (in English)", "narrativeText": "string (in ${scriptLanguage})" }
+  ]
+}
+Generate exactly ${sceneCount} scenes.`;
 
   const prompt = `[Seed: ${randomSeed}]
 Generate a UNIQUE video script for a ${niche} series titled "${series_name}".
@@ -159,15 +139,31 @@ Fields to generate (in ${scriptLanguage}):
   - narrativeText: The specific script portion for this scene in ${scriptLanguage}.
   - imagePrompt: A detailed, cinematic description of the visual ONLY in English.`;
 
-  const result = await jsonModel.generateContent(prompt);
-  const parsed = JSON.parse(result.response.text());
-  
+  const response = await cohere.chat({
+    model: modelName,
+    messages: [
+      { role: "system", content: systemMessage },
+      { role: "user", content: prompt }
+    ],
+    responseFormat: { type: "json_object" },
+    temperature: 0.8
+  });
+
+  const rawText = response.message.content[0].text;
+  let parsed;
+  try {
+    parsed = JSON.parse(rawText);
+  } catch (err) {
+    console.error("❌ Cohere JSON Parse Error:");
+    console.error("Raw response snippet:", rawText.slice(0, 500));
+    throw new Error(`Failed to generate valid script JSON: ${err.message}`);
+  }
+
   parsed.language = scriptLanguage;
   if (parsed.scenes.length > sceneCount) parsed.scenes = parsed.scenes.slice(0, sceneCount);
-  
+
   return parsed;
 }
-
 // ─── Hello World ──────────────────────────────────────────────────────────────
 const helloWorld = inngest.createFunction(
   { id: "hello-world", triggers: [{ event: "video-generation/hello-world" }] },
@@ -191,7 +187,7 @@ const generateVideo = inngest.createFunction(
     console.log("🔥 Inngest 'generate-video' invoked for series:", seriesId);
 
     // ── Step 1: Fetch series ─────────────────────────────────────────────────
-    const series = await step.run("fetch-series-data", async () => {
+    const series = await step.run(`fetch-series-data-${seriesId}`, async () => {
       const { data, error } = await supabase
         .from("video_series")
         .select("*")
@@ -203,15 +199,15 @@ const generateVideo = inngest.createFunction(
     });
 
     // ── Step 2: Generate script ──────────────────────────────────────────────
-    const videoData = await step.run("generate-script", async () => {
+    const videoData = await step.run(`generate-script-${seriesId}`, async () => {
       const result = await generateScriptForSeries(series);
       console.log(`✅ Script: "${result.title}" | Lang: ${result.language} | Scenes: ${result.scenes.length}`);
       return result;
     });
 
     // ── Step 3: Generate voiceover ───────────────────────────────────────────
-    const voice = await step.run("generate-voice", async () => {
-      const { scenes } = videoData;
+    const voice = await step.run(`generate-voice-${seriesId}`, async () => {
+      const { scenes } = videoData;       
       const { voice_obj, language_obj } = series;
 
       const isFonada = isFonadaProvider(voice_obj, language_obj);
@@ -220,7 +216,7 @@ const generateVideo = inngest.createFunction(
       if (isFonada) {
         const languageName = language_obj?.language || "Hindi";
         const voiceName = voice_obj?.modelName || "Vaanee";
-        
+
         console.log(`🎙️ Fonada TTS (Chunked) → language: "${languageName}", voice: "${voiceName}"`);
 
         const chunkBuffers = [];
@@ -288,7 +284,8 @@ const generateVideo = inngest.createFunction(
       return { audioUrl: publicUrl };
     });
 
-    // ── Step 4: Generate captions ───────────────────────────────────────────
+
+
     const captions = await step.run("generate-captions", async () => {
       const { voice_obj, language_obj } = series;
 
@@ -301,25 +298,35 @@ const generateVideo = inngest.createFunction(
       const sttLangCode = resolveSTTLanguageCode(language_obj);
       console.log(`📝 Deepgram STT → language: "${sttLangCode}", audio: ${audioUrl}`);
 
-      const { result, error } = await deepgram.listen.prerecorded.transcribeUrl(
+      // ✅ Direct REST call - no SDK needed
+      const dgResponse = await axios.post(
+        "https://api.deepgram.com/v1/listen",
         { url: audioUrl },
         {
-          model: "nova-2",
-          language: sttLangCode,
-          smart_format: true,
-          utterances: true,
-          punctuate: true,
+          headers: {
+            Authorization: `Token ${process.env.DEEPGRAM_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          params: {
+            model: "nova-2",
+            language: sttLangCode,
+            smart_format: true,
+            utterances: true,
+            punctuate: true,
+          },
         }
       );
 
-      if (error) throw new Error(`Deepgram STT error: ${error.message}`);
+      const result = dgResponse.data;
+
       if (!result?.results?.channels?.[0]?.alternatives?.[0]) {
-        throw new Error(`Deepgram STT empty. Language: "${sttLangCode}", URL: ${audioUrl}.`);
+        throw new Error(`Deepgram STT returned empty result. Language: "${sttLangCode}", URL: ${audioUrl}`);
       }
 
       const vttContent = webvtt(result);
       const bucketName = "video-assets";
       const fileName = `captions/${seriesId}_${Date.now()}.vtt`;
+
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
         .upload(fileName, vttContent, { contentType: "text/vtt", upsert: true });
@@ -330,6 +337,8 @@ const generateVideo = inngest.createFunction(
       console.log(`✅ Captions uploaded: ${publicUrl}`);
       return { captionsUrl: publicUrl };
     });
+
+
 
     // ── Step 5: Generate images ───────────────────────────────────────
     const images = await step.run("generate-images", async () => {
