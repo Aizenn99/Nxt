@@ -61,8 +61,8 @@ const helloWorld = inngest.createFunction(
 const generateVideo = inngest.createFunction(
   {
     id: "generate-video",
-    triggers: [{ event: "video-generation/trigger" }],
-    concurrency: { limit: 1, key: "seriesId" }, // Limit per series to prevent overlaps
+    triggers: [{ event: "video/generate" }],
+    concurrency: { limit: 1, key: "event.data.seriesId" }, // Limit per series to prevent overlaps
   },
   async ({ event, step }) => {
     const { seriesId } = event.data;
@@ -366,7 +366,7 @@ const generateVideo = inngest.createFunction(
 const generateTextToVideo = inngest.createFunction(
   {
     id: "text-to-video-generate",
-    triggers: [{ event: "text-to-video/trigger" }],
+    triggers: [{ event: "text-to-video/generate" }],
   },
   async ({ event, step }) => {
     const { prompt, userId } = event.data;
