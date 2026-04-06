@@ -205,6 +205,25 @@ const generateVideo = inngest.createFunction(
       return result;
     });
 
+    // ── Step 2.5: Create Placeholder Record ──────────────────────────────────
+    const placeholder = await step.run(`create-placeholder-${seriesId}`, async () => {
+      const { data, error } = await supabase
+        .from("generated_videos")
+        .insert({
+          series_id: seriesId,
+          title: videoData.title,
+          status: 'generating',
+          scenes: [],
+          audio_url: '',
+          captions_url: '',
+        })
+        .select("id")
+        .single();
+
+      if (error) throw new Error(`Failed to create placeholder: ${error.message}`);
+      return data;
+    });
+
     // ── Step 3: Generate voiceover ───────────────────────────────────────────
     const voice = await step.run(`generate-voice-${seriesId}`, async () => {
       const { scenes } = videoData;       
@@ -273,11 +292,22 @@ const generateVideo = inngest.createFunction(
       await supabase.storage.createBucket(bucketName, { public: true }).catch(() => { });
 
       const fileName = `voiceovers/${seriesId}_${Date.now()}.mp3`;
+      console.log(`📤 Uploading audio to Supabase: ${fileName} (${(finalAudioBuffer.byteLength / 1024 / 1024).toFixed(2)} MB)`);
+
+      // ✅ Convert Buffer to ArrayBuffer to fix "fetch failed" in Node.js 18+
+      const audioArrayBuffer = finalAudioBuffer.buffer.slice(
+        finalAudioBuffer.byteOffset,
+        finalAudioBuffer.byteOffset + finalAudioBuffer.byteLength
+      );
+
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
-        .upload(fileName, finalAudioBuffer, { contentType: "audio/mpeg", upsert: true });
+        .upload(fileName, audioArrayBuffer, { contentType: "audio/mpeg", upsert: true });
 
-      if (uploadError) throw new Error(`Supabase Audio Upload Error: ${uploadError.message}`);
+      if (uploadError) {
+        console.error("❌ Supabase Audio Upload Error:", uploadError);
+        throw new Error(`Supabase Audio Upload Error: ${uploadError.message}`);
+      }
 
       const { data: { publicUrl } } = supabase.storage.from(bucketName).getPublicUrl(fileName);
       console.log(`✅ Final Audio uploaded: ${publicUrl}`);
@@ -326,12 +356,23 @@ const generateVideo = inngest.createFunction(
       const vttContent = webvtt(result);
       const bucketName = "video-assets";
       const fileName = `captions/${seriesId}_${Date.now()}.vtt`;
+      console.log(`📤 Uploading captions to Supabase: ${fileName}`);
+
+      // ✅ Convert string/Buffer to ArrayBuffer to fix "fetch failed"
+      const vttBuffer = Buffer.from(vttContent);
+      const vttArrayBuffer = vttBuffer.buffer.slice(
+        vttBuffer.byteOffset,
+        vttBuffer.byteOffset + vttBuffer.byteLength
+      );
 
       const { error: uploadError } = await supabase.storage
         .from(bucketName)
-        .upload(fileName, vttContent, { contentType: "text/vtt", upsert: true });
+        .upload(fileName, vttArrayBuffer, { contentType: "text/vtt", upsert: true });
 
-      if (uploadError) throw new Error(`Supabase VTT Upload Error: ${uploadError.message}`);
+      if (uploadError) {
+        console.error("❌ Supabase VTT Upload Error:", uploadError);
+        throw new Error(`Supabase VTT Upload Error: ${uploadError.message}`);
+      }
 
       const { data: { publicUrl } } = supabase.storage.from(bucketName).getPublicUrl(fileName);
       console.log(`✅ Captions uploaded: ${publicUrl}`);
@@ -340,28 +381,105 @@ const generateVideo = inngest.createFunction(
 
 
 
-    // ── Step 5: Generate images ───────────────────────────────────────
-    const images = await step.run("generate-images", async () => {
-      console.warn("⚠️ generate-images: placeholder.");
-      return { imageUrls: [] };
-    });
+    // ── Step 5: Generate images individually (Restart-proof) ─────────
+    const { scenes } = videoData;
+    const { series_name, niche, video_style } = series;
+    const styleTitle = video_style?.title || "cinematic";
+    const generatedScenes = [];
 
-    // ── Step 6: Save to database ──────────────────────────────────────
-    await step.run("save-to-database", async () => {
-      console.warn("⚠️ save-to-database: placeholder.");
-      return { success: true };
+    // A simple seed for consistency across the series
+    const seed = Math.floor(Math.random() * 1000000);
+
+    for (let i = 0; i < scenes.length; i++) {
+        const scene = scenes[i];
+        const sceneWithImage = await step.run(`generate-scene-${i + 1}-image`, async () => {
+            console.log(`🎨 Generating Image for Scene ${i + 1}/${scenes.length}...`);
+            const prompt = `Series: ${series_name}. Niche: ${niche}. Style: ${styleTitle}. Scene Description: ${scene.imagePrompt}`;
+
+            const hfRes = await axios.post(
+                "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+                { 
+                    inputs: prompt,
+                    parameters: { width: 1024, height: 1024, seed: seed }
+                },
+                {
+                    headers: {
+                        Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+                        "Content-Type": "application/json",
+                        Accept: "image/jpeg",
+                    },
+                    responseType: "arraybuffer",
+                }
+            );
+
+            if (!hfRes.data || hfRes.data.byteLength === 0) {
+                throw new Error(`Hugging Face Inference API returned empty buffer for scene ${i + 1}`);
+            }
+
+            const imgBuffer = Buffer.from(hfRes.data);
+            const bucketName = "video-assets";
+            const fileName = `images/${seriesId}_scene_${i + 1}_${Date.now()}.png`;
+
+            // ✅ Convert Buffer to ArrayBuffer to fix "fetch failed" in Node.js 18+
+            const imgArrayBuffer = imgBuffer.buffer.slice(
+                imgBuffer.byteOffset,
+                imgBuffer.byteOffset + imgBuffer.byteLength
+            );
+
+            const { error: uploadError } = await supabase.storage
+                .from(bucketName)
+                .upload(fileName, imgArrayBuffer, { contentType: "image/png", upsert: true });
+
+            if (uploadError) throw new Error(`Supabase Image Upload Error for scene ${i + 1}: ${uploadError.message}`);
+
+            const { data: { publicUrl } } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+            console.log(`✅ Scene ${i + 1} Image: ${publicUrl}`);
+
+            return {
+                ...scene,
+                imageUrl: publicUrl
+            };
+        });
+        generatedScenes.push(sceneWithImage);
+    }
+
+    // ── Step 6: Finalize Database Record ─────────────────────────────────────
+    const savedResult = await step.run("finalize-database-record", async () => {
+      console.log(`💾 Finalizing results for ${generatedScenes.length} scenes to 'generated_videos'...`);
+
+      const { data, error } = await supabase
+        .from("generated_videos")
+        .update({
+          audio_url: voice.audioUrl,
+          captions_url: captions.captionsUrl,
+          scenes: generatedScenes,
+          status: 'completed'
+        })
+        .eq("id", placeholder.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("❌ Failed to finalize video result:", error.message);
+        throw new Error(`DB Finalize Error: ${error.message}`);
+      }
+      console.log(`✅ Generation complete! Video ID: ${placeholder.id}`);
+
+      return data;
     });
 
     return {
       success: true,
       message: `Video generation completed for: ${series.series_name}`,
       data: {
+        id: savedResult.id,
         title: videoData.title,
         language: videoData.language,
-        scenes: videoData.scenes.length,
+        scenesCount: generatedScenes.length,
         audioUrl: voice.audioUrl,
         captionsUrl: captions.captionsUrl,
-        imageUrls: images.imageUrls,
+        imageUrls: generatedScenes.map((s) => s.imageUrl),
+        scenes: generatedScenes,
       },
     };
   }

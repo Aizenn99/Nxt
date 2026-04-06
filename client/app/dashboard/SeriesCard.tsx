@@ -115,6 +115,8 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
       toast.success("Manual generation triggered! Your video will be ready shortly.", {
         icon: <Sparkles className="w-4 h-4 text-purple-400" />,
       });
+      // Redirect to the videos page with a 'generating' query parameter
+      router.push("/dashboard/videos?generating=true");
     } catch (err: any) {
       toast.error("Failed to trigger generation: " + err.message);
     }
