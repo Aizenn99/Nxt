@@ -1,54 +1,68 @@
 const axios = require("axios");
-const ffmpeg = require("fluent-ffmpeg");
+const ffmpegStatic = require("ffmpeg-static");
+const { spawn } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const sharp = require("sharp");
 const { CohereClientV2 } = require("cohere-ai");
 const { supabase } = require("../../config/supabase");
 const { FORMAT_CONFIG, NICHE_TONE_MAP } = require("./constants");
-const { estimateDurationSeconds, uploadToSupabase } = require("./utils");
+const { estimateDurationSeconds, uploadToSupabase, uploadBufferToSupabase } = require("./utils");
 
 const cohere = new CohereClientV2({ token: process.env.COHERE_API });
 
 // ─── Image Generation with Fallback Chain ─────────────────────────────────────
 async function generateImageWithFallback(prompt, seed, format = "landscape") {
-  const { falSize, width, height } = FORMAT_CONFIG[format] || FORMAT_CONFIG.landscape;
-
-  // 1st: Fal.ai Flux Schnell
+  // 1st: Hugging Face (FLUX.1-schnell)
   try {
-    const falRes = await axios.post(
-      "https://fal.run/fal-ai/flux/schnell",
-      {
-        prompt,
-        image_size: falSize,
-        num_inference_steps: 4,
-        num_images: 1,
-        seed,
-      },
+    const hfRes = await axios.post(
+      "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell",
+      { inputs: prompt },
       {
         headers: {
-          Authorization: `Key ${process.env.FAL_AI}`,
+          Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
           "Content-Type": "application/json",
+          Accept: "image/jpeg",
         },
+        responseType: "arraybuffer",
         timeout: 60000,
       }
     );
-    const url = falRes.data?.images?.[0]?.url;
-    if (url) {
-      console.log("✅ Image from Fal.ai Flux");
-      return url;
+
+    if (hfRes.status === 200 && hfRes.data) {
+      // Normalize to valid JPEG using Sharp
+      const normalizedBuffer = await sharp(Buffer.from(hfRes.data)).jpeg().toBuffer();
+      const fileName = `images/hf_${Date.now()}.jpg`;
+      const hfUrl = await uploadBufferToSupabase(normalizedBuffer, fileName, "image/jpeg");
+      console.log("✅ Image from Hugging Face");
+      return hfUrl;
     }
-    throw new Error("Fal.ai returned no image URL");
+    throw new Error(`Hugging Face API returned status ${hfRes.status}`);
   } catch (err) {
-    console.warn("⚠️ Fal.ai failed, falling back to Pollinations:", err.message);
+    console.warn("⚠️ Hugging Face failed, falling back to Pollinations:", err.message);
   }
 
-  // 2nd: Pollinations.ai fallback
-  const pollinationsUrl =
-    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
-    `?width=${width}&height=${height}&nologo=true&seed=${seed}&model=flux`;
-  console.log("✅ Image from Pollinations.ai");
-  return pollinationsUrl;
+  // 2nd: Pollinations.ai (Reliable zero-config fallback)
+  try {
+    const safePrompt = encodeURIComponent(prompt.substring(0, 1000));
+    const polUrl = `https://image.pollinations.ai/prompt/${safePrompt}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux`;
+    
+    const polRes = await axios.get(polUrl, { responseType: "arraybuffer", timeout: 60000, maxRedirects: 5 });
+    if (polRes.status === 200 && polRes.data && polRes.data.byteLength > 1000) {
+      // Normalize to valid JPEG using Sharp
+      const normalizedBuffer = await sharp(Buffer.from(polRes.data)).jpeg({ quality: 90 }).toBuffer();
+      const fileName = `images/pol_${Date.now()}.jpg`;
+      const publicUrl = await uploadBufferToSupabase(normalizedBuffer, fileName, "image/jpeg");
+      console.log("✅ Image from Pollinations");
+      return publicUrl;
+    }
+    throw new Error(`Pollinations returned status ${polRes.status} or empty data (${polRes.data?.byteLength || 0} bytes)`);
+  } catch (err) {
+    console.error("❌ Pollinations fallback failed:", err.message);
+  }
+
+  return null;
 }
 
 // ─── Thumbnail Generator ──────────────────────────────────────────────────────
@@ -85,87 +99,234 @@ async function generateThumbnail(firstImageUrl, title, seriesId) {
       .toBuffer();
 
     const fileName = `thumbnails/${seriesId}_${Date.now()}.jpg`;
-    const { error } = await supabase.storage
-      .from("video-assets")
-      .upload(fileName, thumbnailBuffer, { contentType: "image/jpeg", upsert: true });
-
-    if (error) throw new Error(error.message);
-    const { data: { publicUrl } } = supabase.storage.from("video-assets").getPublicUrl(fileName);
-    console.log(`🖼️ Thumbnail generated: ${publicUrl}`);
-    return publicUrl;
+    const thumbnailUrl = await uploadBufferToSupabase(thumbnailBuffer, fileName, "image/jpeg");
+    console.log(`🖼️ Thumbnail generated: ${thumbnailUrl}`);
+    return thumbnailUrl;
   } catch (err) {
     console.warn("⚠️ Thumbnail generation failed (non-critical):", err.message);
     return null;
   }
 }
 
-// ─── FFmpeg MP4 Renderer ──────────────────────────────────────────────────────
-async function renderMP4(scenes, audioUrl, seriesId, format = "landscape") {
-  const { ffmpegScale } = FORMAT_CONFIG[format] || FORMAT_CONFIG.landscape;
-  const tmpDir = `/tmp/${seriesId}_render`;
+// ─── Caption Style Map ────────────────────────────────────────────────────────
+// Maps each caption style ID to a unique FFmpeg ASS force_style string.
+// Colors are in ASS &HBBGGRR format (Blue-Green-Red, no alpha).
+const CAPTION_STYLE_MAP = {
+  karaoke:
+    "FontName=Arial Black,FontSize=28,PrimaryColour=&Hffffff,SecondaryColour=&H00ffff," +
+    "OutlineColour=&H000000,BackColour=&H80000000,Bold=1,BorderStyle=3,Outline=2,Shadow=1,Alignment=2,MarginV=25",
+  typewriter:
+    "FontName=Courier New,FontSize=22,PrimaryColour=&H00ff00," +
+    "OutlineColour=&H003300,BackColour=&HC0000000,Bold=1,BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginV=30",
+  pop:
+    "FontName=Impact,FontSize=36,PrimaryColour=&Hffffff," +
+    "OutlineColour=&Hff00ff,BackColour=&H00000000,Bold=1,BorderStyle=1,Outline=3,Shadow=2,Alignment=2,MarginV=20",
+  slide:
+    "FontName=Trebuchet MS,FontSize=24,PrimaryColour=&Hffffff," +
+    "OutlineColour=&H404040,BackColour=&H00000000,Bold=0,BorderStyle=1,Outline=2,Shadow=3,Alignment=2,MarginV=45",
+  glow:
+    "FontName=Arial,FontSize=28,PrimaryColour=&Hffffff," +
+    "OutlineColour=&H0088ff,BackColour=&H00000000,Bold=1,BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=25",
+  shake:
+    "FontName=Impact,FontSize=34,PrimaryColour=&H00ffff," +
+    "OutlineColour=&H000000,BackColour=&H00000000,Bold=1,BorderStyle=1,Outline=3,Shadow=1,Alignment=2,MarginV=20",
+};
+
+// ─── Ken Burns Effects ────────────────────────────────────────────────────────
+// Each function returns a zoompan filter string.
+// Images are resized to 2x output to give room for zoom/pan.
+// z range 1.3-1.8 keeps image sharp throughout (on a 2x source).
+const KEN_BURNS_EFFECTS = [
+  // 1. Slow zoom in, centered
+  (d, w, h) =>
+    `zoompan=z='1.3+on*0.5/${d}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${d}:s=${w}x${h}:fps=25`,
+  // 2. Slow zoom out, centered
+  (d, w, h) =>
+    `zoompan=z='1.8-on*0.5/${d}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${d}:s=${w}x${h}:fps=25`,
+  // 3. Pan left → right at moderate zoom
+  (d, w, h) =>
+    `zoompan=z='1.5':x='on*(iw-iw/zoom)/${d}':y='ih/2-(ih/zoom/2)':d=${d}:s=${w}x${h}:fps=25`,
+  // 4. Pan right → left at moderate zoom
+  (d, w, h) =>
+    `zoompan=z='1.5':x='(iw-iw/zoom)-on*(iw-iw/zoom)/${d}':y='ih/2-(ih/zoom/2)':d=${d}:s=${w}x${h}:fps=25`,
+  // 5. Zoom in + pan right
+  (d, w, h) =>
+    `zoompan=z='1.3+on*0.4/${d}':x='on*(iw-iw/zoom)/${d}':y='ih/2-(ih/zoom/2)':d=${d}:s=${w}x${h}:fps=25`,
+  // 6. Zoom out + pan down
+  (d, w, h) =>
+    `zoompan=z='1.8-on*0.4/${d}':x='iw/2-(iw/zoom/2)':y='on*(ih-ih/zoom)/${d}':d=${d}:s=${w}x${h}:fps=25`,
+];
+
+// ─── FFmpeg Spawn Helper ──────────────────────────────────────────────────────
+function runFFmpegSpawn(args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegStatic, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stderrLog = "";
+
+    proc.stderr.on("data", (chunk) => {
+      const line = chunk.toString();
+      stderrLog += line;
+      const timeMatch = line.match(/time=(\d+:\d+:\d+\.\d+)/);
+      if (timeMatch) {
+        console.log(`🎬 FFmpeg progress: ${timeMatch[1]}`);
+      }
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        console.error("🎬 FFmpeg stderr (last 1500 chars):", stderrLog.slice(-1500));
+        reject(new Error(`FFmpeg exited with code ${code}`));
+      }
+    });
+
+    proc.on("error", (err) =>
+      reject(new Error(`FFmpeg spawn error: ${err.message}`))
+    );
+  });
+}
+
+// ─── FFmpeg MP4 Renderer (Ken Burns + Caption Styles) ─────────────────────────
+async function renderMP4(scenes, audioUrl, seriesId, format = "landscape", captionsUrl = null, captionStyle = null) {
+  const config = FORMAT_CONFIG[format] || FORMAT_CONFIG.landscape;
+  const { ffmpegScale } = config;
+  const [scaleW, scaleH] = ffmpegScale.split(":");
+  const fps = 25;
+
+  // ── Temp directory setup
+  const baseTmp = path.resolve(os.tmpdir(), "nxtai");
+  if (!fs.existsSync(baseTmp)) fs.mkdirSync(baseTmp, { recursive: true });
+  const tmpDir = path.join(baseTmp, `${seriesId}_render`);
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
-  // Download audio
+  // ── Download audio
   const audioPath = path.join(tmpDir, "audio.mp3");
   const audioRes = await axios.get(audioUrl, { responseType: "arraybuffer" });
   fs.writeFileSync(audioPath, Buffer.from(audioRes.data));
 
-  // Download all scene images
+  // ── Download captions VTT
+  let captionsPath = null;
+  if (captionsUrl) {
+    try {
+      captionsPath = path.join(tmpDir, "captions.vtt");
+      const capRes = await axios.get(captionsUrl, { responseType: "arraybuffer" });
+      fs.writeFileSync(captionsPath, Buffer.from(capRes.data));
+      console.log("📝 Captions downloaded for burning into video");
+    } catch (err) {
+      console.warn("⚠️ Could not download captions:", err.message);
+      captionsPath = null;
+    }
+  }
+
+  // ── Download images & resize to 2x output for zoompan headroom
+  const srcW = parseInt(scaleW) * 2;
+  const srcH = parseInt(scaleH) * 2;
   const imagePaths = await Promise.all(
     scenes.map(async (scene, i) => {
       const imgPath = path.join(tmpDir, `scene_${i}.jpg`);
       try {
+        if (!scene.imageUrl) throw new Error("No imageUrl");
         const imgRes = await axios.get(scene.imageUrl, { responseType: "arraybuffer" });
-        fs.writeFileSync(imgPath, Buffer.from(imgRes.data));
+        const normalizedBuf = await sharp(Buffer.from(imgRes.data))
+          .resize(srcW, srcH, { fit: "cover" })
+          .jpeg({ quality: 95 })
+          .toBuffer();
+        fs.writeFileSync(imgPath, normalizedBuf);
       } catch {
-        // If image download fails, create a black frame placeholder
         await sharp({
-          create: { width: 1344, height: 768, channels: 3, background: { r: 0, g: 0, b: 0 } }
-        }).jpeg().toFile(imgPath);
+          create: { width: srcW, height: srcH, channels: 3, background: { r: 0, g: 0, b: 0 } },
+        })
+          .jpeg()
+          .toFile(imgPath);
       }
       return imgPath;
     })
   );
 
-  // Calculate per-scene duration
+  // ── Calculate per-scene duration
   const totalEstimated = scenes.reduce(
     (sum, s) => sum + (s.estimatedDuration || estimateDurationSeconds(s.narrativeText)),
     0
   );
-  const perSceneDuration = totalEstimated / scenes.length;
+  const perSceneDuration = Math.max(totalEstimated / scenes.length, 3);
+  console.log(`🎬 Per-scene duration: ${perSceneDuration.toFixed(2)}s (${scenes.length} scenes, ${totalEstimated.toFixed(1)}s total)`);
 
-  // Build FFmpeg concat file
+  // ── Pass 1: Render each scene with a Ken Burns zoom/pan effect
+  const sceneClips = [];
+  for (let i = 0; i < imagePaths.length; i++) {
+    const clipPath = path.join(tmpDir, `clip_${i}.mp4`);
+    const totalFrames = Math.ceil(perSceneDuration * fps);
+    const effectFn = KEN_BURNS_EFFECTS[i % KEN_BURNS_EFFECTS.length];
+    const zoompanFilter = effectFn(totalFrames, scaleW, scaleH);
+
+    await runFFmpegSpawn([
+      "-loop", "1",
+      "-i", imagePaths[i],
+      "-vf", zoompanFilter,
+      "-t", perSceneDuration.toFixed(2),
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "23",
+      "-pix_fmt", "yuv420p",
+      "-y", clipPath,
+    ]);
+
+    sceneClips.push(clipPath);
+    console.log(`🎬 Scene ${i + 1}/${imagePaths.length} rendered with Ken Burns effect`);
+  }
+
+  // ── Create concat manifest for the clips
   const concatFilePath = path.join(tmpDir, "concat.txt");
-  const concatContent = imagePaths
-    .map(p => `file '${p}'\nduration ${perSceneDuration.toFixed(2)}`)
-    .join("\n");
-  fs.writeFileSync(concatFilePath, concatContent);
+  const concatLines = sceneClips.map((p) => `file '${p.replace(/\\/g, "/")}'`);
+  fs.writeFileSync(concatFilePath, concatLines.join("\n"));
 
   const outputPath = path.join(tmpDir, "output.mp4");
 
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(concatFilePath)
-      .inputOptions(["-f concat", "-safe 0"])
-      .input(audioPath)
-      .outputOptions([
-        `-vf scale=${ffmpegScale}:force_original_aspect_ratio=decrease,pad=${ffmpegScale.replace(":", ":")}:(ow-iw)/2:(oh-ih)/2,setsar=1`,
-        "-c:v libx264",
-        "-preset fast",
-        "-crf 23",
-        "-c:a aac",
-        "-b:a 128k",
-        "-pix_fmt yuv420p",
-        "-movflags +faststart",
-        "-shortest",
-      ])
-      .output(outputPath)
-      .on("start", cmd => console.log("🎬 FFmpeg started:", cmd))
-      .on("progress", p => console.log(`🎬 FFmpeg progress: ${Math.round(p.percent || 0)}%`))
-      .on("end", () => resolve(outputPath))
-      .on("error", err => reject(new Error(`FFmpeg render failed: ${err.message}`)))
-      .run();
-  });
+  // ── Resolve caption force_style from series captionStyle
+  const styleId = captionStyle?.id || "karaoke";
+  const forceStyle = CAPTION_STYLE_MAP[styleId] || CAPTION_STYLE_MAP.karaoke;
+  console.log(`🎨 Caption style: "${styleId}"`);
+
+  // ── Pass 2: Concatenate clips + audio + subtitles
+  function buildFinalArgs(withSubtitles) {
+    const args = [
+      "-f", "concat", "-safe", "0", "-i", concatFilePath,
+      "-i", audioPath,
+    ];
+
+    if (withSubtitles && captionsPath) {
+      const escapedPath = captionsPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      args.push("-vf", `subtitles='${escapedPath}':force_style='${forceStyle}'`);
+    }
+
+    args.push(
+      "-c:v", "libx264",
+      "-preset", "fast",
+      "-crf", "23",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      "-shortest",
+      "-y", outputPath
+    );
+    return args;
+  }
+
+  // Try with subtitles first, fallback to without
+  try {
+    console.log("🎬 Final render (with subtitles)...");
+    await runFFmpegSpawn(buildFinalArgs(true));
+    return outputPath;
+  } catch (err) {
+    if (captionsPath) {
+      console.warn("⚠️ Final render failed with subtitles, retrying without:", err.message);
+      await runFFmpegSpawn(buildFinalArgs(false));
+      return outputPath;
+    }
+    throw err;
+  }
 }
 
 // ─── Social Metadata Generator ────────────────────────────────────────────────

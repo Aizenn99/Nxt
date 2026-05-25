@@ -2,3 +2,26 @@ fastapi
 uvicorn
 vision-agents[getstream,gemini,elevenlabs,deepgram]
 python-dotenv
+# Kandinsky-5 dependencies
+torch
+torchvision
+transformers
+diffusers
+accelerate
+einops
+opencv-python
+pillow
+bitsandbytes
+omegaconf
+sentencepiece
+tqdm
+aiohttp
+pydantic
+anyio
+packaging
+requests
+imageio
+imageio-ffmpeg
+av
+ninja
+peft

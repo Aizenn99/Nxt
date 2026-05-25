@@ -7,7 +7,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const cookieParser = require("cookie-parser");
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const PORT = process.env.PORT || 5000;
 
@@ -42,6 +42,8 @@ app.use("/api/agent", require("./routes/agentroute"));
 app.use("/api/series", require("./routes/series"));
 app.use("/api/inngest", require("./routes/inngest"));
 app.use("/api/generate", require("./routes/generate"));
+app.use("/api/settings", require("./routes/settings"));
+app.use("/api/social", require("./routes/social"));
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

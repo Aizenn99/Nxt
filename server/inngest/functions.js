@@ -3,6 +3,12 @@ const { supabase } = require("../config/supabase");
 const { webvtt } = require("@deepgram/captions");
 const axios = require("axios");
 const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+// Models & Services
+const User = require("../models/user");
+const { sendVideoReadyEmail } = require("../utils/emailService");
 
 // Helper modules
 const {
@@ -15,6 +21,7 @@ const {
   resolveSTTLanguageCode,
   estimateDurationSeconds,
   uploadToSupabase,
+  uploadBufferToSupabase,
 } = require("./helpers/utils");
 
 const {
@@ -67,7 +74,8 @@ const generateVideo = inngest.createFunction(
   async ({ event, step }) => {
     const { seriesId } = event.data;
     const format = event.data.format || "landscape";
-    console.log(`🔥 Inngest 'generate-video' invoked | series: ${seriesId} | format: ${format}`);
+    const skipImages = event.data.skipImages || false;
+    console.log(`🔥 Inngest 'generate-video' invoked | series: ${seriesId} | format: ${format} | skipImages: ${skipImages}`);
 
     // ── Step 1: Fetch series
     const series = await step.run(`fetch-series-data-${seriesId}`, async () => {
@@ -80,23 +88,15 @@ const generateVideo = inngest.createFunction(
       return data;
     });
 
-    // ── Step 2: Generate script
-    const videoData = await step.run(`generate-script-${seriesId}`, async () => {
-      const result = await generateScriptForSeries(series);
-      return result;
-    });
-
-    // ── Step 2.5: Create placeholder record
+    // ── Step 2: Create placeholder record (Track from start)
     const placeholder = await step.run(`create-placeholder-${seriesId}`, async () => {
       const { data, error } = await supabase
         .from("generated_videos")
         .insert({
           series_id: seriesId,
-          title: videoData.title,
+          title: "Preparing script...",
           status: "generating",
           scenes: [],
-          audio_url: "",
-          captions_url: "",
           format,
         })
         .select("id")
@@ -106,6 +106,16 @@ const generateVideo = inngest.createFunction(
     });
 
     try {
+      // ── Step 3: Generate script
+      const videoData = await step.run(`generate-script-${seriesId}`, async () => {
+        const result = await generateScriptForSeries(series);
+        // Update title now that we have it
+        await supabase
+          .from("generated_videos")
+          .update({ title: result.title })
+          .eq("id", placeholder.id);
+        return result;
+      });
       // ── Step 3: Generate voiceover
       const voice = await step.run(`generate-voice-${seriesId}`, async () => {
         const { scenes } = videoData;
@@ -230,20 +240,8 @@ const generateVideo = inngest.createFunction(
         }
 
         const vttContent = webvtt(result);
-        const vttBuffer = Buffer.from(vttContent);
-        const vttArrayBuffer = vttBuffer.buffer.slice(
-          vttBuffer.byteOffset,
-          vttBuffer.byteOffset + vttBuffer.byteLength
-        );
-
         const fileName = `captions/${seriesId}_${Date.now()}.vtt`;
-        const { error: uploadError } = await supabase.storage
-          .from("video-assets")
-          .upload(fileName, vttArrayBuffer, { contentType: "text/vtt", upsert: true });
-
-        if (uploadError) throw new Error(`VTT Upload Error: ${uploadError.message}`);
-
-        const { data: { publicUrl } } = supabase.storage.from("video-assets").getPublicUrl(fileName);
+        const publicUrl = await uploadBufferToSupabase(Buffer.from(vttContent), fileName, "text/vtt");
         console.log(`✅ Captions uploaded: ${publicUrl}`);
         return { captionsUrl: publicUrl };
       });
@@ -255,33 +253,41 @@ const generateVideo = inngest.createFunction(
 
       const seed = Math.floor(Math.random() * 1000000);
 
-      const generatedScenes = await Promise.all(
-        videoData.scenes.map((scene, i) =>
-          step.run(`generate-scene-${i + 1}-image`, async () => {
+      const generatedScenes = [];
+      for (let i = 0; i < videoData.scenes.length; i++) {
+        const scene = videoData.scenes[i];
+        const result = await step.run(`generate-scene-${i + 1}-image`, async () => {
+          let imageUrl;
+          if (skipImages) {
+            console.log(`🎨 [Fast Test] Skipping AI image generation for scene ${i + 1}. Using fallback.`);
+            // Use the video style's main image as a placeholder
+            imageUrl = series.video_style?.image ? `/${series.video_style.image}` : "/video-style/Realistic.png";
+          } else {
             console.log(`🎨 Generating image for scene ${i + 1}/${videoData.scenes.length}...`);
             const fullPrompt = `${visualAnchor} Scene ${i + 1}: ${scene.imagePrompt}`;
-            const imageUrl = await generateImageWithFallback(fullPrompt, seed + i, format);
+            imageUrl = await generateImageWithFallback(fullPrompt, seed + i, format);
+          }
 
-            // Recovery point
-            const currentScenes = videoData.scenes.slice(0, i + 1).map((s, j) => ({
-              ...s,
-              imageUrl: j === i ? imageUrl : undefined,
-              estimatedDuration: estimateDurationSeconds(s.narrativeText),
-            }));
+          // Recovery point
+          const currentScenes = videoData.scenes.slice(0, i + 1).map((s, j) => ({
+            ...s,
+            imageUrl: j === i ? imageUrl : undefined,
+            estimatedDuration: estimateDurationSeconds(s.narrativeText),
+          }));
 
-            await supabase
-              .from("generated_videos")
-              .update({ scenes: currentScenes })
-              .eq("id", placeholder.id);
+          await supabase
+            .from("generated_videos")
+            .update({ scenes: currentScenes })
+            .eq("id", placeholder.id);
 
-            return {
-              ...scene,
-              imageUrl,
-              estimatedDuration: estimateDurationSeconds(scene.narrativeText),
-            };
-          })
-        )
-      );
+          return {
+            ...scene,
+            imageUrl,
+            estimatedDuration: estimateDurationSeconds(scene.narrativeText),
+          };
+        });
+        generatedScenes.push(result);
+      }
 
       // ── Step 5.5: Generate Thumbnail
       const thumbnailUrl = await step.run("generate-thumbnail", async () => {
@@ -292,9 +298,9 @@ const generateVideo = inngest.createFunction(
       // ── Step 5.6: Render MP4
       const renderedVideo = await step.run("render-mp4", async () => {
         console.log("🎬 Starting MP4 render...");
-        const tmpDir = `/tmp/${seriesId}_render`;
+        const tmpDir = path.join(os.tmpdir(), "nxtai", `${seriesId}_render`);
         try {
-          const outputPath = await renderMP4(generatedScenes, voice.audioUrl, seriesId, format);
+          const outputPath = await renderMP4(generatedScenes, voice.audioUrl, seriesId, format, captions?.captionsUrl || null, series.caption_style);
           const videoFileName = `videos/${seriesId}_${Date.now()}.mp4`;
           const videoUrl = await uploadToSupabase(outputPath, videoFileName, "video/mp4");
           fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -338,6 +344,7 @@ const generateVideo = inngest.createFunction(
       // ── Step 7: Notify
       await step.run("notify-completion", async () => {
         try {
+          // 1. In-app notification
           await supabase.from("notifications").insert({
             user_id: series.user_id,
             type: "video_ready",
@@ -345,6 +352,31 @@ const generateVideo = inngest.createFunction(
             video_id: placeholder.id,
             read: false,
           });
+
+          // 2. Email notification via Plunk
+          const user = await User.findById(series.user_id);
+          if (user && user.email) {
+            await sendVideoReadyEmail(user.email, {
+              title: videoData.title,
+              videoUrl: renderedVideo.videoUrl,
+              thumbnailUrl,
+              format
+            });
+          }
+
+          // 3. Emit a 'completion' event for the scheduled workflow to pick up
+          await inngest.send({
+            name: "video/generation-completed",
+            data: {
+              seriesId: series.id,
+              videoId: placeholder.id,
+              videoUrl: renderedVideo.videoUrl,
+              thumbnailUrl,
+              title: videoData.title,
+              userId: series.user_id
+            }
+          });
+          
         } catch (err) {
           console.warn("⚠️ Notification failed:", err.message);
         }
@@ -441,6 +473,7 @@ const generateTextToVideo = inngest.createFunction(
       // 6. Notify
       await step.run("notify-completion", async () => {
         try {
+          // 1. In-app notification
           await supabase.from("notifications").insert({
             user_id: userId,
             type: "video_ready",
@@ -448,6 +481,17 @@ const generateTextToVideo = inngest.createFunction(
             video_id: placeholder.id,
             read: false,
           });
+
+          // 2. Email notification via Plunk
+          const user = await User.findById(userId);
+          if (user && user.email) {
+            await sendVideoReadyEmail(user.email, {
+              title: prompt.substring(0, 50),
+              videoUrl: videoResult,
+              thumbnailUrl,
+              format
+            });
+          }
         } catch (err) {
           console.warn("⚠️ Notification failed:", err.message);
         }
@@ -463,8 +507,157 @@ const generateTextToVideo = inngest.createFunction(
   }
 );
 
+// ─── Scheduled Publishing Logic ──────────────────────────────────────────────
+
+/**
+ * Cron job that runs every hour to check for series that need video generation.
+ * Generation starts 2 hours before the scheduled publish time.
+ */
+const checkDailySchedules = inngest.createFunction(
+  { id: "check-daily-schedules", name: "Hourly Schedule Check", triggers: [{ cron: "0 * * * *" }] },
+  async ({ step }) => {
+    console.log("🔍 Running Hourly Schedule Check...");
+    const { data: activeSeriesResponse, error } = await step.run("fetch-active-series", async () => {
+      const { data, error } = await supabase
+        .from("video_series")
+        .eq("status", "scheduled") // Looking for active/scheduled series
+        .select("*");
+      if (error) throw error;
+      return { data: data || [] };
+    });
+
+    if (error) throw new Error(`Failed to fetch active series: ${error}`);
+
+    const now = new Date();
+    const currentUTCHour = now.getUTCHours();
+    
+    // We want to start generation 2 hours BEFORE publish time.
+    const targetUTCHour = (currentUTCHour + 2) % 24;
+
+    const seriesToTrigger = activeSeriesResponse.data.filter(series => {
+      let publishHour = parseInt(series.publish_time.split(":")[0]);
+      if (series.publish_period === "PM" && publishHour !== 12) publishHour += 12;
+      if (series.publish_period === "AM" && publishHour === 12) publishHour = 0;
+      
+      return publishHour === targetUTCHour;
+    });
+
+    if (seriesToTrigger.length > 0) {
+      console.log(`⏰ Cron found ${seriesToTrigger.length} series to start generating for hour ${targetUTCHour}:00 UTC`);
+      
+      const events = seriesToTrigger.map(s => ({
+        name: "series/scheduled-workflow",
+        data: { seriesId: s.id, isTest: false }
+      }));
+
+      await step.sendEvent("trigger-scheduled-workflows", events);
+    }
+
+    return { triggered: seriesToTrigger.length };
+  }
+);
+
+/**
+ * Comprehensive workflow for a scheduled series:
+ * 1. Generates the video (via existing pipeline event)
+ * 2. Waits until the scheduled publish time
+ * 3. Publishes to all selected platforms
+ */
+const scheduledSeriesWorkflow = inngest.createFunction(
+  { id: "scheduled-series-workflow", name: "Scheduled Series Workflow", triggers: [{ event: "series/scheduled-workflow" }] },
+  async ({ event, step }) => {
+    const { seriesId, isTest, skipImages } = event.data;
+    console.log(`🎬 Starting scheduled workflow for series: ${seriesId} (Test: ${isTest})`);
+
+    // ── Step 1: Trigger Generation
+    await step.sendEvent("trigger-generation", {
+        name: "video/generate",
+        data: { seriesId, skipImages }
+    });
+
+    // Wait for the video to be completed.
+    const generationResult = await step.waitForEvent("wait-for-generation", {
+      event: "video/generation-completed",
+      timeout: "20m",
+      match: "data.seriesId == event.data.seriesId"
+    });
+
+    if (!generationResult) {
+      throw new Error("Video generation timed out or failed.");
+    }
+
+    const { videoUrl, thumbnailUrl, title } = generationResult.data;
+
+    // ── Step 2: Sleep until publish time (skip if isTest)
+    if (!isTest) {
+        const series = await step.run("fetch-series-for-sleep", async () => {
+            const { data } = await supabase.from("video_series").select("*").eq("id", seriesId).single();
+            return data;
+        });
+
+        let publishHour = parseInt(series.publish_time.split(":")[0]);
+        if (series.publish_period === "PM" && publishHour !== 12) publishHour += 12;
+        if (series.publish_period === "AM" && publishHour === 12) publishHour = 0;
+
+        const now = new Date();
+        const publishDate = new Date(now);
+        publishDate.setUTCHours(publishHour, 0, 0, 0);
+
+        if (publishDate < now) {
+            publishDate.setUTCDate(publishDate.getUTCDate() + 1);
+        }
+
+        console.log(`😴 Series ${seriesId} sleeping until ${publishDate.toISOString()} for publishing...`);
+        await step.sleepUntil("wait-until-publish-time", publishDate);
+    }
+
+    // ── Step 3: Publish to Platforms
+    const series = await step.run("fetch-series-for-publish", async () => {
+        const { data } = await supabase.from("video_series").select("*").eq("id", seriesId).single();
+        return data;
+    });
+
+    const platforms = series.platforms || [];
+    console.log(`🚀 Publishing series ${seriesId} to platforms: ${platforms.join(", ")}`);
+
+    if (platforms.includes("email")) {
+        await step.run("publish-to-email", async () => {
+            const user = await User.findById(series.user_id);
+            if (user && user.email) {
+                await sendVideoReadyEmail(user.email, {
+                    title,
+                    videoUrl,
+                    thumbnailUrl,
+                    format: series.format || "landscape"
+                });
+                return { platform: "email", success: true };
+            }
+            return { platform: "email", success: false, reason: "User not found" };
+        });
+    }
+
+    if (platforms.includes("youtube")) {
+        await step.run("publish-to-youtube-placeholder", async () => {
+            console.log(`[YouTube API Placeholder] Publishing video "${title}"...`);
+            return { platform: "youtube", status: "placeholder_sent" };
+        });
+    }
+
+    if (platforms.includes("instagram")) {
+        await step.run("publish-to-instagram-placeholder", async () => {
+            console.log(`[Instagram API Placeholder] Publishing video "${title}"...`);
+            return { platform: "instagram", status: "placeholder_sent" };
+        });
+    }
+
+    return { success: true, platforms };
+  }
+);
+
 module.exports = [
   helloWorld,
   generateVideo,
   generateTextToVideo,
+  checkDailySchedules,
+  scheduledSeriesWorkflow,
 ];

@@ -9,7 +9,8 @@ import {
   BookText,
   Sparkles,
   LayoutDashboard,
-  MessageSquare
+  MessageSquare,
+  Settings
 } from "lucide-react";
 import { useSelector } from "react-redux";
 import {
@@ -53,6 +54,12 @@ export function DashboardSidebar() {
       icon: BookText,
       href: "/dashboard/guides",
       isActive: pathname === "/dashboard/guides"
+    },
+    {
+      label: "Settings",
+      icon: Settings,
+      href: "/dashboard/settings",
+      isActive: pathname === "/dashboard/settings"
     },
     {
       label: "Back To Chat",

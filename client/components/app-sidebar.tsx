@@ -9,9 +9,12 @@ import {
   Pin,
   Check,
   X,
+  Sparkles,
+  Blocks,
 } from "lucide-react";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -55,6 +58,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ onNewChat }: AppSidebarProps) {
   const dispatch = useDispatch<any>();
+  const router = useRouter();
+  const pathname = usePathname();
   const chats = useSelector(selectChats);
   const currentChatId = useSelector(selectCurrentChatId);
 
@@ -111,6 +116,11 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
         onClick={() => {
           if (editingChatId !== chat.id) {
             dispatch(switchChat(chat.id));
+            if (chat.type === "orchestrator") {
+              if (pathname !== "/orchestrator") router.push("/orchestrator");
+            } else {
+              if (pathname !== "/") router.push("/");
+            }
           }
         }}
         className="w-full justify-start gap-3 rounded-xl cursor-pointer px-3 hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors data-[active=true]:bg-muted/60 data-[active=true]:text-foreground"
@@ -118,7 +128,11 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
         <div className="flex justify-between items-center gap-2 w-full pr-1 overflow-hidden">
           {/* CHAT TITLE OR EDIT INPUT */}
           <div className="truncate text-sm flex gap-2 items-center flex-1 min-w-0">
-            <MessageSquare className="h-4 w-4 shrink-0" />
+            {chat.type === "orchestrator" ? (
+              <Sparkles className="h-4 w-4 shrink-0 text-blue-400" />
+            ) : (
+              <MessageSquare className="h-4 w-4 shrink-0" />
+            )}
             {editingChatId === chat.id ? (
               <div
                 className="flex items-center gap-1 w-full"
@@ -268,6 +282,25 @@ export function AppSidebar({ onNewChat }: AppSidebarProps) {
 
       {/* CONTENT */}
       <SidebarContent className="px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <Link href="/orchestrator" className="w-full">
+                <SidebarMenuButton
+                  variant="default"
+                  className="w-full justify-start gap-3 rounded-xl px-3 bg-gradient-to-r from-blue-500/10 to-purple-500/10 hover:from-blue-500/20 hover:to-purple-500/20 text-foreground transition-all border border-white/5"
+                  asChild
+                >
+                  <div>
+                    <Sparkles className="h-4 w-4 shrink-0 text-blue-400" />
+                    <span className="font-semibold">NxtAi Orchestrator</span>
+                  </div>
+                </SidebarMenuButton>
+              </Link>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+
         {/* PINNED SECTION */}
         {pinnedChats.length > 0 && (
           <SidebarGroup>

@@ -91,6 +91,36 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
     }
   };
 
+  const executeWorkflow = async () => {
+    try {
+      if (!user) {
+        toast.error("You must be logged in to execute workflow");
+        return;
+      }
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/series/execute-workflow`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ seriesId: series.id }),
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to execute workflow");
+      }
+
+      toast.success("Full workflow triggered! Video will generate then publish shortly.", {
+        icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+      });
+      router.push("/dashboard/videos?generating=true");
+    } catch (err: any) {
+      toast.error("Failed to execute workflow: " + err.message);
+    }
+  };
+
   const triggerGeneration = async () => {
     try {
       if (!user) {
@@ -232,23 +262,34 @@ export function SeriesCard({ series, onUpdate }: SeriesCardProps) {
       </CardContent>
 
       <CardFooter className="p-4 pt-0 flex flex-col gap-2">
-        <div className="flex gap-2 w-full">
+        <div className="flex flex-col gap-2 w-full">
+          <div className="flex gap-2 w-full">
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 text-[11px] h-9 border-white/10 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer gap-2"
+              onClick={() => router.push("/dashboard/videos")}
+            >
+              <ClockHistory className="w-3.5 h-3.5" />
+              History
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="flex-1 text-[11px] h-9 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl cursor-pointer gap-2"
+              onClick={triggerGeneration}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              Generate
+            </Button>
+          </div>
           <Button
-            variant="outline"
             size="sm"
-            className="flex-1 text-[11px] h-9 border-white/10 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer gap-2"
-            onClick={() => toast.info("Redirecting to video history...")}
+            className="w-full text-[11px] h-9 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl cursor-pointer gap-2"
+            onClick={executeWorkflow}
           >
-            <ClockHistory className="w-3.5 h-3.5" />
-            View History
-          </Button>
-          <Button
-            size="sm"
-            className="flex-1 text-[11px] h-9 bg-purple-600 hover:bg-purple-500 text-white rounded-xl cursor-pointer gap-2"
-            onClick={triggerGeneration}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-white/80" />
-            Trigger Now
+            <Play className="w-3.5 h-3.5" />
+            Execute Full Workflow (Test)
           </Button>
         </div>
       </CardFooter>

@@ -13,6 +13,7 @@ const chatHistorySchema = new mongoose.Schema(
       {
         id: { type: String, required: true },
         title: { type: String, default: "New Chat" },
+        type: { type: String, enum: ["chat", "orchestrator"], default: "chat" },
         pinned: { type: Boolean, default: false },
         shareId: { type: String, default: null },
 

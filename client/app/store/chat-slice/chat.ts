@@ -20,6 +20,7 @@ export interface Message {
 export interface Chat {
   id: string;
   title: string;
+  type?: "chat" | "orchestrator";
   pinned?: boolean;
   shareId?: string | null;
   messages: Message[];
@@ -374,6 +375,24 @@ const chatSlice = createSlice({
       }
     },
 
+    startNewOrchestratorChat(state) {
+      const id = generateId();
+      const newChat: Chat = {
+        id,
+        title: "New Orchestrator Session",
+        type: "orchestrator",
+        pinned: false,
+        messages: [],
+      };
+      state.chats.push(newChat);
+      state.currentChatId = id;
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem("currentChatId", id);
+        backupToLocalStorage(state.chats);
+      }
+    },
+
     // ✅ Used by generateChatTitle thunk to update title in state
     setChatTitle(
       state,
@@ -499,6 +518,7 @@ const chatSlice = createSlice({
 
 export const {
   startNewChat,
+  startNewOrchestratorChat,
   addMessage,
   setChats,
   setLoading,

@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const { createSeries, getSeriesById, updateSeries, generateSeries } = require("../controllers/seriesController");
+const { createSeries, getSeriesById, updateSeries, generateSeries, executeWorkflow } = require("../controllers/seriesController");
 
 /**
  * @desc    Save a new video series
@@ -25,5 +25,7 @@ router.put("/update/:id", authMiddleware, updateSeries);
  * @access  Private
  */
 router.post("/generate", authMiddleware, generateSeries);
+
+router.post("/execute-workflow", authMiddleware, executeWorkflow);
 
 module.exports = router;

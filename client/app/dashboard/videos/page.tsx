@@ -15,8 +15,29 @@ import {
   ArrowLeft,
   Sparkles,
   Loader2,
-  Clock
+  Clock,
+  Trash2,
+  Download,
+  X
 } from "lucide-react";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription,
+  DialogFooter
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useSelector } from "react-redux";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
@@ -41,6 +62,12 @@ export default function VideosPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showInitializingBanner, setShowInitializingBanner] = useState(true);
+  
+  // Preview & Delete State
+  const [previewVideo, setPreviewVideo] = useState<any>(null);
+  const [videoToDelete, setVideoToDelete] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Enhanced Polling Logic
   useEffect(() => {
@@ -58,6 +85,16 @@ export default function VideosPage() {
       setIsGenerating(false);
     }
   }, [videos, searchParams]);
+
+  // Auto-dismiss initializing banner after 15 seconds if stuck
+  useEffect(() => {
+    if (isGenerating && videos.filter(v => v.status === 'generating').length === 0) {
+      const timer = setTimeout(() => {
+        setShowInitializingBanner(false);
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [isGenerating, videos]);
 
   const fetchVideos = async (showLoading = true) => {
     if (!user?.id) return;
@@ -86,14 +123,58 @@ export default function VideosPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!videoToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("generated_videos")
+        .delete()
+        .eq("id", videoToDelete.id);
+
+      if (error) throw error;
+
+      toast.success("Video deleted successfully");
+      setVideos(prev => prev.filter(v => v.id !== videoToDelete.id));
+      setVideoToDelete(null);
+    } catch (err: any) {
+      console.error("Delete Error:", err.message);
+      toast.error("Failed to delete video");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDownload = async (url: string, title: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', `${title || 'video'}.mp4`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      console.error("Download Error:", err.message);
+      // Fallback to new tab if fetch fails (e.g. CORS)
+      window.open(url, '_blank');
+    }
+  };
+
   useEffect(() => {
     fetchVideos();
   }, [user]);
 
-  const filteredVideos = videos.filter(v => 
-    v.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    v.video_series?.series_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredVideos = videos.filter(v => {
+    const matchesSearch = v.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         v.video_series?.series_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const isFailed = v.status === 'failed';
+    return matchesSearch && !isFailed;
+  });
 
   return (
     <SidebarProvider>
@@ -125,8 +206,8 @@ export default function VideosPage() {
               </div>
 
               {/* Generating Status Banner */}
-              {isGenerating && videos.filter(v => v.status === 'generating').length === 0 && (
-                <Card className="mb-8 overflow-hidden border-purple-500/30 bg-purple-500/5 backdrop-blur-sm">
+              {isGenerating && showInitializingBanner && videos.filter(v => v.status === 'generating').length === 0 && (
+                <Card className="mb-8 overflow-hidden border-purple-500/30 bg-purple-500/5 backdrop-blur-sm relative group/banner">
                   <CardContent className="p-6 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-purple-600/20 flex items-center justify-center">
@@ -142,6 +223,14 @@ export default function VideosPage() {
                         </p>
                       </div>
                     </div>
+                    <Button 
+                       variant="ghost" 
+                       size="icon" 
+                       className="opacity-0 group-hover/banner:opacity-100 transition-opacity absolute top-2 right-2 text-muted-foreground hover:text-white"
+                       onClick={() => setShowInitializingBanner(false)}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
                   </CardContent>
                 </Card>
               )}
@@ -193,13 +282,42 @@ export default function VideosPage() {
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
                               
-                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
-                                 <Button variant="outline" size="sm" className="rounded-full bg-white/10 border-white/20 hover:bg-purple-600 hover:border-purple-500 text-white gap-2 cursor-pointer">
-                                   <Play className="w-4 h-4 fill-current" />
-                                   Preview
-                                 </Button>
-                              </div>
-                            </>
+                               <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-[2px]">
+                                 <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="rounded-full bg-white/10 border-white/20 hover:bg-purple-600 hover:border-purple-500 text-white gap-2 cursor-pointer"
+                                    onClick={() => setPreviewVideo(v)}
+                                  >
+                                    <Play className="w-4 h-4 fill-current" />
+                                    Preview
+                                  </Button>
+                                  
+                                  {v.video_url && !isGeneratingVideo && !isFailedVideo && (
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      className="rounded-full bg-white/10 border-white/20 hover:bg-blue-600 hover:border-blue-500 text-white gap-2 cursor-pointer"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDownload(v.video_url, v.title);
+                                      }}
+                                    >
+                                      <Download className="w-4 h-4" />
+                                      Download
+                                    </Button>
+                                  )}
+                               </div>
+
+                               <Button
+                                 variant="ghost"
+                                 size="icon"
+                                 className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 hover:bg-red-500/80 text-white h-8 w-8 rounded-full"
+                                 onClick={() => setVideoToDelete(v)}
+                               >
+                                 <Trash2 className="w-4 h-4" />
+                               </Button>
+                             </>
                           )}
 
                           <div className="absolute bottom-3 left-3 right-3">
@@ -273,6 +391,62 @@ export default function VideosPage() {
           </main>
         </SidebarInset>
       </div>
+
+      {/* Video Preview Modal */}
+      <Dialog open={!!previewVideo} onOpenChange={(open) => !open && setPreviewVideo(null)}>
+        <DialogContent className="max-w-4xl bg-[#0a0a0c] border-white/10 p-1 flex flex-col gap-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="p-4 flex flex-row items-center justify-between border-b border-white/5">
+            <div className="flex flex-col gap-1 pr-8 overflow-hidden">
+               <DialogTitle className="text-white font-bold truncate">
+                 {previewVideo?.title || "Video Preview"}
+               </DialogTitle>
+               <DialogDescription className="text-xs text-muted-foreground">
+                 {previewVideo?.video_series?.series_name || "Text to Video"}
+               </DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="relative aspect-video bg-black rounded-b-xl overflow-hidden">
+            {previewVideo?.video_url ? (
+               <video 
+                 src={previewVideo.video_url} 
+                 controls 
+                 autoPlay 
+                 className="w-full h-full object-contain"
+               />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-muted-foreground italic">
+                Video is not fully rendered yet or available.
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!videoToDelete} onOpenChange={(open) => !open && setVideoToDelete(null)}>
+        <AlertDialogContent className="bg-[#0a0a0c] border-white/10 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground text-sm">
+              This action cannot be undone. This will permanently delete the video
+              <span className="text-white font-semibold"> "{videoToDelete?.title}" </span>
+              and remove it from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10 hover:text-white cursor-pointer">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDelete}
+              className="bg-red-600 hover:bg-red-500 text-white cursor-pointer"
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete Permanently"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {

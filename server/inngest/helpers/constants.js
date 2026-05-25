@@ -58,7 +58,7 @@ const FORMAT_CONFIG = {
 };
 
 // ─── AI Model Config ─────────────────────────────────────────────────────────
-const COHERE_MODELS = ["command-a-03-2025", "command-r-plus"];
+const COHERE_MODELS = ["command-a-03-2025", "command-a-03-2025"];
 
 module.exports = {
   DEEPGRAM_TTS_MODEL_MAP,

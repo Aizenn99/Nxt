@@ -203,4 +203,49 @@ const generateSeries = async (req, res) => {
 };
 
 
-module.exports = { createSeries, getSeriesById, updateSeries, generateSeries };
+/**
+ * @desc    Manually trigger the full scheduled workflow (Generation + Publish)
+ * @route   POST /api/series/execute-workflow
+ * @access  Private
+ */
+const executeWorkflow = async (req, res) => {
+  const { seriesId } = req.body;
+  const userId = req.userId;
+
+  if (!seriesId) {
+    return res.status(400).json({ message: "Series ID is required" });
+  }
+
+  try {
+    const { data: series, error: fetchError } = await supabase
+      .from("video_series")
+      .select("id")
+      .eq("id", seriesId)
+      .eq("user_id", userId)
+      .single();
+
+    if (fetchError || !series) {
+      return res.status(404).json({ message: "Series not found or unauthorized" });
+    }
+
+    // Trigger Inngest event for the full workflow with a test flag
+    await inngest.send({
+      name: "series/scheduled-workflow",
+      data: { 
+        seriesId, 
+        isTest: true, // This will tell Inngest to skip the "wait until publish time" step
+        skipImages: true // Skip expensive AI image generation for this test
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Full workflow (Generation + Publishing) triggered for testing",
+    });
+  } catch (err) {
+    console.error("Execute Workflow Error:", err.message);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+module.exports = { createSeries, getSeriesById, updateSeries, generateSeries, executeWorkflow };
